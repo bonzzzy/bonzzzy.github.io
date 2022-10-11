@@ -60,15 +60,97 @@ def send_request(
     return html_string
 
 
+#############################################################################################
+######################## FONCTION copiée / collée depuis skeleton.py ########################
+#############################################################################################
+def get_unused_filename(
+    filename: str,
+    idx_size: int = 3,
+    idx_start: int = 0,
+    idx_force: bool = True
+    ) -> str:
+    """ Permet de trouver un nom de fichier disponible,
+    similaire au « filename » fourni.
+    
+    ATTENTION : filename contient le nom ( « basename » )
+    du fichier + son extension ( « ext » ).
+
+    Ainsi, si « filename » n'existe pas, nous renverrons
+    « filename » lui-même ( sauf si idx_force = True ).
+
+    Sinon, nous renverrons le 1er nom de fichier disponible
+    et du type :
+
+        - « basename - 0###.ext » où ### est un entier.
+
+    :param filename: le modèle de nom de fichier ie le nom
+    de fichier ET SON EXTENSION.
+
+    :param idx_size: le nombre minimum de caractères dont doit
+    être composé l'index ajouté ( s'il existe ). Par exemple,
+    si idx_size = 2, nous aurons possiblement à minima en sortie
+    « basename - 00.ext » ( si « filename » existe ou « idx_force
+    = True » ).
+
+    :param idx_start: faut-il commencer notre recherche de suffixe
+    à 0, à 1, ... ? C-a-d « basename - 0.ext » conviendrait-il ?
+    Ou faut-il « basename - 1.ext » à minima ? ...
+
+    :param idx_force: faut-il ou pas forcément ajouter un index
+    à « filename » ? Si non, on pourra renvoyer « filename » en
+    sortie. Si oui, nous aurons à minima en sortie un nom du type
+    « basename - #.ext »
+
+    :return: le nom de fichier désiré.
+    """
+
+    # On regarde tout d'abord si le nom qui
+    # nous est donné n'est pas tout simplement
+    # celui que nous recherchons...
+    #
+    alt_name = filename
+    if idx_force or os.path.exists(alt_name):
+
+        # Nous sommes ici dans le cas où nous
+        # devons construire un nom de fichier
+        # alternatif ( ie le fichier existe
+        # déjà ou cela nous est demandé d'une
+        # façon impérative ).
+        #
+        basename, ext = os.path.splitext(filename)
+        format_mask = ' - {:0' + str(idx_size) + 'd}'
+
+        suffix_n = idx_start
+
+        while True:
+
+            suffix = format_mask.format(suffix_n)
+            alt_name = basename + suffix + ext
+
+            if not os.path.exists(alt_name):
+                break
+
+            suffix_n += 1
+
+    # Nous retournons le nom de fichier qui
+    # convient.
+    #
+    return alt_name
+
+
 def save_in_iPad(
     file_src: str,
     content: str
     ):
     """
-    """
-    name, ext = os.path.splitext(file_src)
+    """    
+    if os.path.exists(file_src):
+        name, ext = os.path.splitext(file_src)
+        tmp_dst = name + " { new version }" + ext
+        file_dst = get_unused_filename(tmp_dst)
 
-    file_dst = name + " { iPad }" + ext
+    else:
+        file_dst = file_src
 
     with open(file_dst, "wt") as new_file:
 
