@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# CONSEIL = Il est possible de renommer, pour améliorer la facilité d'utilisation,
+# CONSEIL = Il est possible de renommer, pour améliorer sa facilité d'utilisation,
 # ce fichier en « @i » par exemple :
 #
 #		mv import_via_github.sh @i

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf8 -*-
-_mode_debug = True
+_mode_debug = False
 
 
 import os
@@ -17,8 +17,63 @@ from socket import timeout
 url_base = "https://bonzzzy.github.io/"
 
 
+# Le dictionnaire ci-dessous permet d'associer le type
+# de fichier avec le jeu de charactères qu'il contient.
+#
+# CONVENTION : Lorsque le fichier est codé sous forme
+# de « bytes » ( codage sous forme octale ), on code
+# ceci par « None ».
+#
+# ATTENTION : Il serait possible de mettre « None »
+# pour toutes les valeurs puisque :
+#
+#       . urllib.request.urlopen("...").read() renvoie
+# une chaîne de caractères au format « bytes ».
+#
+#       . en mode "wb", écrire dans un fichier demande
+# une chaîne au format b"...", ie au format « bytes ».
+#
+# Ainsi, indiquer qu'il faut traiter tous les types de
+# fichiers au format « bytes » ( « None » ), revient à
+# éviter le cycle intermédiaire de décodage des chaînes
+# au format « bytes ».
+#
+# REMARQUE : Sous Unix, pour avoir une idée du jeu de
+# caractères d'1 fichier, on utilise la cmd « file » :
+#
+#       $ file file1.txt file2.txt
+#       file1.txt:    ASCII English text
+#       file2.txt:    UTF-8 Unicode text
+#
+# ... Ceci dit, ce n'est pas toujours exact puisque,
+# avec a-Shell sous iPad, en écrivant :
+#
+#       file import_via_github.sh
+#
+# .. on obtient en résultat :
+#
+#       import_via_github.sh: POSIX shell script, ASCII text executable
+#
+# .. alors que :
+#
+#       . si on associe, dans filetype_to_characterset,
+# '.sh' à 'ASCII', ce script plante pour import_via_github.sh
+# ( donc ce .sh n'est pas codé en 'ASCII'...).
+#
+#       . « Bash stores strings as byte strings ».
+# Cf https://unix.stackexchange.com/questions/250366/how-to-force-shell-script-characters-encoding-from-within-the-script
+#
+filetype_to_characterset = {
+    '.bat': 'ASCII',
+    '.py': 'UTF-8',
+    '.sh': None,
+    '*': 'UTF-8'
+}
+
+
 def send_request(
-    url: str
+    url: str,
+    character_set: str = None
     ) -> str:
     """
     """
@@ -28,18 +83,23 @@ def send_request(
         response = urllib.request.urlopen(url_src, timeout = 3)
 
     except InvalidURL as error:
+        print('')
         print('===>> InvalidURL =', error)
 
     except NotConnected as error:
+        print('')
         print('===>> NotConnected =', error)
 
     except TimeoutError:
+        print('')
         print('===>> Request timed out...')
 
     except HTTPError as error:
+        print('')
         print('===>>', error.status, 'ERROR =', error.reason)
 
     except URLError as error:
+        print('')
         if isinstance(error.reason, timeout):
             print('===>> Socket timeout error...')
         else:
@@ -52,20 +112,28 @@ def send_request(
             print()
             print(html_bytes)
 
-        character_set = response.headers.get_content_charset()
-        if character_set is None:
+        set_for_chars = response.headers.get_content_charset()
+        if set_for_chars is None:
 
             # Le "character encoding" n'est normalement pas
             # spécifié dans le fichier .py, pas en tout cas
             # à la façon d'un fichier HTML normal !!!
             #
             # Donc get_content_charset() ne devrait pas le
-            # lire correctement si c'est bien un fichier de
-            # code Python.
+            # lire correctement si c'est un fichier script
+            # Python, bash ou autres.
             #
-            character_set = 'UTF-8'
+            set_for_chars = character_set
 
-        html_string = html_bytes.decode(character_set)
+        if set_for_chars is None:
+
+            # Aucun décodage à faire car le jeu de caractères
+            # qui nous concerne est celui des « byte strings ».
+            #
+            html_string = html_bytes
+
+        else:
+            html_string = html_bytes.decode(set_for_chars)
 
         if _mode_debug:
             print()
@@ -154,7 +222,8 @@ def get_unused_filename(
 
 def save_in_iPad(
     file_name: str,
-    content: str
+    content: str,
+    character_set: str = None
     ):
     """
     """
@@ -170,11 +239,10 @@ def save_in_iPad(
             # ( ce n'est pas ergonomique puisque
             # je n'ai pas de clavier ).
             #
+            print('')
             print(
                 'ATTENTION : on va écraser «',
-                file_dst,
-                '» !!!'
-                )
+                file_dst, '» !!!')
             input()
 
         else:
@@ -182,7 +250,21 @@ def save_in_iPad(
             tmp_dst = name + " { new version }" + ext
             file_dst = get_unused_filename(tmp_dst)
 
-    with open(file_dst, "wt") as new_file:
+    if character_set is None:
+
+        # Le jeu de caractères qui nous concerne est
+        # celui des « byte strings ». Donc on ouvre
+        # notre fichier au format « b(yte) ».
+        #
+        flag = "wb"
+
+    else:
+
+        # On ouvre notre fichier au format « t(ext) ».
+        #
+        flag = "wt"
+
+    with open(file_dst, flag) as new_file:
 
         new_file.write(content)
 
@@ -250,22 +332,40 @@ if __name__ == "__main__":
             print()
             print('URL =', url_src)
 
+            _, ext = os.path.splitext(file_src)
 
-            content = send_request(url_src)
+            if ext in filetype_to_characterset.keys():
 
-            #print()
-            #print(content)
+                character_set = filetype_to_characterset[
+                    ext
+                    ]
+                    
+            else:
 
+                character_set = filetype_to_characterset[
+                    '*'
+                    ]
+
+            content = send_request(
+                url_src,
+                character_set
+                )
 
             if content == '':
-                #print()
-                #print('Fichier source introuvable !!!')
-                pass
 
+                if _mode_debug:
+                    print()
+                    print('Fichier source introuvable !!!')
 
             else:
-                save_in_iPad(file_src, content)
 
+                save_in_iPad(
+                    file_src,
+                    content,
+                    character_set
+                    )
+
+                print('')
                 print('===>> File saved')
 
                 #os.startfile(file_dst)
