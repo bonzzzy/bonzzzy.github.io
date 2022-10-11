@@ -4,7 +4,6 @@
 
 import os
 import urllib.request
-import skeleton
 
 from urllib.error import HTTPError, URLError
 
