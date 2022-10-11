@@ -2,6 +2,7 @@
 # -*- coding: utf8 -*-
 
 
+import os
 import sys
 # import skeleton
 
@@ -41,6 +42,8 @@ import sys
 #   Programme PRINCIPAL de ce module s'il est lancé en mode autonome...
 #
 # ---------------------------------------------------------------------------
+
+os.environ["QT_API"] = "pyside6"
 
 from qtpy.QtWidgets import QApplication, QLabel
 
