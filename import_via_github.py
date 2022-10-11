@@ -157,9 +157,9 @@ def save_in_iPad(
             # je n'ai pas de clavier ).
             #
             print(
-                'ATTENTION : on va écraser',
+                'ATTENTION : on va écraser «',
                 file_dst,
-                '!!!'
+                '» !!!'
                 )
             input()
 
