@@ -4,6 +4,7 @@
 
 import os
 import urllib.request
+import skeleton
 
 from urllib.error import HTTPError, URLError
 
@@ -143,8 +144,20 @@ def save_in_iPad(
     content: str
     ):
     """
-    """    
-    if os.path.exists(file_src):
+    """
+    if os.name == 'posix' \
+        and 'posix' and 'm360173' in os.uname().nodename:
+        # Sur mon iPad, j'écrase le fichier
+        # déjà existant... car je ne fais
+        # AUCUNE MODIFICATION depuis 1 iPad
+        # ( ce n'est pas ergonomique puisque
+        # je n'ai pas de clavier ).
+        #
+        print()
+        input('ATTENTION : on va écraser le fichier source !!!')
+        file_dst = file_src
+        
+    elif os.path.exists(file_src):
         name, ext = os.path.splitext(file_src)
         tmp_dst = name + " { new version }" + ext
         file_dst = get_unused_filename(tmp_dst)
