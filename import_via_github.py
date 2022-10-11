@@ -1,17 +1,20 @@
 #!/usr/bin/env python
 # -*- coding: utf8 -*-
+_mode_debug = False
 
 
 import os
+import sys
 import urllib.request
 
 from urllib.error import HTTPError, URLError
+from http.client import InvalidURL, NotConnected
+from socket import timeout
 
 
-#url = 'https://www.google.com/'
-#url = 'https://www.google.com/search?q=test'
+#url_base = 'https://www.google.com/'
+#url_base = 'https://www.google.com/search?q=test'
 url_base = "https://bonzzzy.github.io/"
-default_src = 'import_via_github.py'
 
 
 def send_request(
@@ -22,16 +25,25 @@ def send_request(
     html_string = ''
 
     try:
-        response = urllib.request.urlopen(url_src)
+        response = urllib.request.urlopen(url_src, timeout = 3)
+
+    except InvalidURL as error:
+        print('===>> InvalidURL =', error)
+
+    except NotConnected as error:
+        print('===>> NotConnected =', error)
+
+    except TimeoutError:
+        print('===>> Request timed out...')
 
     except HTTPError as error:
         print('===>>', error.status, 'ERROR =', error.reason)
 
     except URLError as error:
-        print('===>> ERROR =', error.reason)
-
-    except TimeoutError:
-        print('===>> Request timed out...')
+        if isinstance(error.reason, timeout):
+            print('===>> Socket timeout error...')
+        else:
+            print('===>> URLError =', error.reason)
 
     else:
         html_bytes = response.read()
@@ -175,6 +187,25 @@ def save_in_iPad(
 
 if __name__ == "__main__":
 
+    file_lst = []
+    default_src = os.path.basename(__file__)
+
+    for counter, parameter in enumerate(sys.argv, start=0):
+
+        if counter > 0:
+            file_lst.append(parameter)
+
+        if _mode_debug:
+            print(
+                'Paramètre n°',
+                str(counter),
+                'ie sys.argv[',
+                str(counter),
+                '] =',
+                parameter
+                )
+
+    print()
     print()
     print('AIDE :')
     print('======')
@@ -190,7 +221,13 @@ if __name__ == "__main__":
 
         print()
         print()
-        file_src = input('Fichier à télécharger ? ')
+
+        if len(file_lst) == 0:
+            file_src = input('Fichier à télécharger ? ')
+
+        else:
+            file_src = file_lst[0]
+            file_lst.pop(0)
 
 
         if file_src in ('.', ',', ';' ':', '!' ):
@@ -200,27 +237,33 @@ if __name__ == "__main__":
             file_src = default_src
 
 
-        url_src = url_base + file_src
+        prompt = 'Fichier à télécharger = « ' + \
+            file_src + \
+            ' » ---> GO = < Entrée > seulement. '
 
-        print()
-        print('URL =', url_src)
+        if input(prompt) == '':
+
+            url_src = url_base + file_src
+
+            print()
+            print('URL =', url_src)
 
 
-        content = send_request(url_src)
+            content = send_request(url_src)
 
-        #print()
-        #print(content)
-
-
-        if content == '':
             #print()
-            #print('Fichier source introuvable !!!')
-            pass
+            #print(content)
 
 
-        else:
-            save_in_iPad(file_src, content)
+            if content == '':
+                #print()
+                #print('Fichier source introuvable !!!')
+                pass
 
-            print('===>> File saved')
 
-            #os.startfile(file_dst)
+            else:
+                save_in_iPad(file_src, content)
+
+                print('===>> File saved')
+
+                #os.startfile(file_dst)
