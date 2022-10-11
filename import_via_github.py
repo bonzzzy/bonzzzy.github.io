@@ -139,30 +139,34 @@ def get_unused_filename(
 
 
 def save_in_iPad(
-    file_src: str,
+    file_name: str,
     content: str
     ):
     """
     """
-    if os.name == 'posix' \
-        and 'posix' and 'm360173' in os.uname().nodename:
-        # Sur mon iPad, j'écrase le fichier
-        # déjà existant... car je ne fais
-        # AUCUNE MODIFICATION depuis 1 iPad
-        # ( ce n'est pas ergonomique puisque
-        # je n'ai pas de clavier ).
-        #
-        print()
-        input('ATTENTION : on va écraser le fichier source !!!')
-        file_dst = file_src
-        
-    elif os.path.exists(file_src):
-        name, ext = os.path.splitext(file_src)
-        tmp_dst = name + " { new version }" + ext
-        file_dst = get_unused_filename(tmp_dst)
+    file_dst = file_name
 
-    else:
-        file_dst = file_src
+    if os.path.exists(file_dst):
+
+        if os.name == 'posix' \
+            and 'm360173' in os.uname().nodename:
+            # Sur mon iPad, j'écrase le fichier
+            # déjà existant... car je ne fais
+            # AUCUNE MODIFICATION depuis 1 iPad
+            # ( ce n'est pas ergonomique puisque
+            # je n'ai pas de clavier ).
+            #
+            print(
+                'ATTENTION : on va écraser',
+                file_dst,
+                '!!!'
+                )
+            input()
+
+        else:
+            name, ext = os.path.splitext(file_dst)
+            tmp_dst = name + " { new version }" + ext
+            file_dst = get_unused_filename(tmp_dst)
 
     with open(file_dst, "wt") as new_file:
 
