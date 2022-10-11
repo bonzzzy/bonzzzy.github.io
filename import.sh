@@ -5,4 +5,5 @@
 # 		chmod u+rwx import.sh
 #
 
-python import_via_github.py "skeleton.py" "my Check-Lists.py" "" .
+python import_via_github.py "skeleton.py" "my Check-Lists.py"
+
