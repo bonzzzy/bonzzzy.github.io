@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf8 -*-
-_mode_debug = False
+_mode_debug = True
 
 
 import os
@@ -48,6 +48,10 @@ def send_request(
     else:
         html_bytes = response.read()
 
+        if _mode_debug:
+            print()
+            print(html_bytes)
+
         character_set = response.headers.get_content_charset()
         if character_set is None:
 
@@ -63,11 +67,9 @@ def send_request(
 
         html_string = html_bytes.decode(character_set)
 
-        #print()
-        #print(html_bytes)
-    
-        #print()
-        #print(html_string)
+        if _mode_debug:
+            print()
+            print(html_string)
 
     return html_string
 
