@@ -276,9 +276,9 @@ def save_in_iPad(
             #
             print('')
             prompt = \
-                'ATTENTION : on va écraser «' \
+                'ATTENTION : on va écraser « ' \
                 + file_dst \
-                + '» !!!'
+                + ' » !!!'
             input(prompt)
 
         else:
