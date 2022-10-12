@@ -43,6 +43,7 @@ import sys
 #
 # ---------------------------------------------------------------------------
 
+from kivy import kivy_home_dir
 from kivy.app import App
 from kivy.uix.button import Button
 
@@ -55,6 +56,15 @@ class Window(App):
 
 
 if __name__ == "__main__":
+
+    print()
+    print()
+    print('INFORMATIONS :')
+    print('==============')
+    print()
+    print("\tkivy_home_dir =\t", kivy_home_dir)
+    print()
+    print()
 
     Window().run()
 
