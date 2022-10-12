@@ -43,38 +43,20 @@ import sys
 #
 # ---------------------------------------------------------------------------
 
-os.environ["QT_API"] = "pyside6"
-
-from qtpy.QtWidgets import QApplication, QLabel
-
-
-def window(arguments):
-
-    # Initialize application
-    #
-    # You need one (and only one) QApplication instance per application.
-    # Pass in sys.argv to allow command line arguments for your app.
-    # If you know you won't use command line arguments QApplication([]) works too.
-    #
-    app = QApplication(sys.argv)
-
-    # Create label widget.
-    #
-    label = QLabel('Hello, world!')
+from kivy.app import App
+from kivy.uix.button import Button
 
 
-    # IMPORTANT!!!!! Windows are hidden by default.
-    #
-    label.show()
+class Window(App):
 
+    def build(self):
 
-    # Start the event loop.
-    app.exec_()
+        return Button(text = 'Hello World')
 
 
 if __name__ == "__main__":
 
-    window(sys.argv)
+    Window().run()
 
 
 if False:
