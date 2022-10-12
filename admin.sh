@@ -2,7 +2,7 @@
 #
 
 
-rename_to_cmd {
+rename_to_cmd() {
 
 	if [ -e $1 ]
 	then
@@ -14,7 +14,7 @@ rename_to_cmd {
 }
 
 
-rename_to_file {
+rename_to_file() {
 
 	if [ -e $1 ]
 	then
