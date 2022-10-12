@@ -6,7 +6,7 @@ rename_to_file() {
 
 	if [ -e "$1" ]
 	then
-		if [ -e "$2" ]; then rm $2; fi
+		if [ -e "$2" ]; then rm "$2"; fi
 		mv "$1" "$2"
 	fi
 
