@@ -240,10 +240,11 @@ def save_in_iPad(
             # je n'ai pas de clavier ).
             #
             print('')
-            print(
-                'ATTENTION : on va écraser «',
-                file_dst, '» !!!')
-            input()
+            prompt = \
+                'ATTENTION : on va écraser «' \
+                + file_dst \
+                + '» !!!'
+            input(prompt)
 
         else:
             name, ext = os.path.splitext(file_dst)
