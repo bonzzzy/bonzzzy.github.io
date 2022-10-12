@@ -4,10 +4,10 @@
 
 rename_to_file() {
 
-	if [[ -e $1 ]]
+	if [ -e "$1" ]
 	then
-		if [[ -e $2 ]]; then rm $2; fi
-		mv $1 $2
+		if [ -e "$2" ]; then rm $2; fi
+		mv "$1" "$2"
 	fi
 
 }
@@ -15,8 +15,8 @@ rename_to_file() {
 
 rename_to_cmd() {
 
-	rename_to_file $1 $2
-	chmod u+rwx $2
+	rename_to_file "$1" "$2"
+	chmod u+rwx "$2"
 
 }
 
