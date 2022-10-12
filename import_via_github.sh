@@ -14,4 +14,4 @@
 # 		chmod u+rwx @i
 #
 
-python import_via_github.py "skeleton.py" "my%20Check-Lists.py" "import_via_github.sh"
+python import_via_github.py "import_via_github.sh" "skeleton.py" "my Check-Lists.py" "admin.sh"

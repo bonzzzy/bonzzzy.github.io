@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf8 -*-
-_mode_debug = False
+_mode_debug_ = False
 
 
 import os
@@ -71,6 +71,33 @@ filetype_to_characterset = {
 }
 
 
+def url_to_valid(
+    url: str
+    ) -> str:
+    """ S'assure qu'une URL soit valide, i.e
+    ne comporte pas de caractères interdits,
+    et renvoie si nécessaire l'URL adéquate,
+    ou l'URL inchangée si elle était déjà
+    valide.
+
+    Cf par exemple le message d'erreur suivant
+    si l'URL contient un espace :
+
+        InvalidURL = URL can't contain control characters. '/my Check-Lists.py' (found at least ' ')
+
+    :return: une URL valide.
+    """
+    valid_url = url
+
+    if ' ' in url:
+        valid_url = valid_url.replace(
+            ' ',
+            '%20'
+            )
+
+    return valid_url
+
+
 def send_request(
     url: str,
     character_set: str = None
@@ -79,8 +106,16 @@ def send_request(
     """
     html_string = ''
 
+    url_valid = url_to_valid(url)
+
+    if _mode_debug_:
+        print('URL ok =', url_valid)
+
     try:
-        response = urllib.request.urlopen(url_src, timeout = 3)
+        response = urllib.request.urlopen(
+            url_valid,
+            timeout = 3
+            )
 
     except InvalidURL as error:
         print('')
@@ -108,7 +143,7 @@ def send_request(
     else:
         html_bytes = response.read()
 
-        if _mode_debug:
+        if _mode_debug_:
             print()
             print(html_bytes)
 
@@ -135,7 +170,7 @@ def send_request(
         else:
             html_string = html_bytes.decode(set_for_chars)
 
-        if _mode_debug:
+        if _mode_debug_:
             print()
             print(html_string)
 
@@ -280,7 +315,7 @@ if __name__ == "__main__":
         if counter > 0:
             file_lst.append(parameter)
 
-        if _mode_debug:
+        if _mode_debug_:
             print(
                 'Paramètre n°',
                 str(counter),
@@ -354,7 +389,7 @@ if __name__ == "__main__":
 
             if content == '':
 
-                if _mode_debug:
+                if _mode_debug_:
                     print()
                     print('Fichier source introuvable !!!')
 

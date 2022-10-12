@@ -1,22 +1,36 @@
 #!/bin/sh
 #
 
-if [ -e "import_via_github.sh" ]
-then
-	if [ -e @i ]; then rm @i; fi
-	mv "import_via_github.sh" @i
-	chmod u+rwx @i
-fi
 
-if [ -e "my%20Check-Lists.py" ]
-then
-	if [ -e "my Check-Lists.py" ]; then rm "my Check-Lists.py"; fi
-	mv "my%20Check-Lists.py" "my Check-Lists.py"
-fi
+rename_to_cmd {
 
-if [ -e "my%20Check-Lists.sh" ]
-then
-	if [ -e @c ]; then rm @c; fi
-	mv "my%20Check-Lists.sh" @c
-	chmod u+rwx @c
-fi
+	if [ -e $1 ]
+	then
+		if [ -e $2 ]; then rm $2; fi
+		mv $1 $2
+		chmod u+rwx $2
+	fi
+
+}
+
+
+rename_to_file {
+
+	if [ -e $1 ]
+	then
+		if [ -e $2 ]; then rm $2; fi
+		mv $1 $2
+	fi
+
+}
+
+
+rename_to_cmd "import_via_github.sh" "@i"
+
+rename_to_cmd "my%20Check-Lists.sh" "@c"
+
+rename_to_cmd "my Check-Lists.sh" "@c"
+
+rename_to_file "my%20Check-Lists.py" "my Check-Lists.py"
+
+rename_to_cmd "admin.sh" "admin"
