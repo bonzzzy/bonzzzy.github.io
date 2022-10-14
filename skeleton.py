@@ -280,6 +280,13 @@ class ScriptSkeleton:
         self.paths_and_miscellaneous['working_MACHINE_TYPE'] = our_machine
         self.paths_and_miscellaneous['working_MACHINE_NAME'] = our_nodename
 
+        # Sommes-nous 32 ou 64 bits ?
+        #
+        is_64bits = sys.maxsize > 2 ** 32
+        str_size = '64' if is_64bits else '32'
+        msg_architecture = 'ARCHITECTURE ' + str_size \
+                         + ' bits sur OS ' + our_system
+
         # On initialise le répertoire de travail de ce programme.
         #
         if directory == '' or not os.path.isdir(directory):
@@ -316,18 +323,7 @@ class ScriptSkeleton:
         #
         if os.name.upper() == 'NT':
 
-            # On tient compte de la version de Windows, ie est-elle 32 ou 64 bits ?
-            #
-            is_64bits = sys.maxsize > 2 ** 32
             root = os.environ['SYSTEMROOT']
-
-            if is_64bits:
-        
-                msg_architecture = 'ARCHITECTURE Windows 64 bits : choix des répertoires en conséquence'
-
-            else:
-        
-                msg_architecture = 'ARCHITECTURE Windows 32 bits : choix des répertoires en conséquence'
 
             # On considère que LibreOffice est tjrs au même endroit...
             #
