@@ -1,12 +1,26 @@
 #!/usr/bin/env python
 # -*- coding: utf8 -*-
 
+# Positionner la variable ___debug___ ci-dessous suivant les besoins...
+#
+# RQ : « ___debug___ = __debug__ » implique que le mode choisi dépend
+# des paramètres de lancement de Python. Ainsi :
+#
+#       __debug__
+#       This constant is true if Python was not started with an -O option.
+#       See also the assert statement.
+#
+#       Cf https://docs.python.org/3/library/constants.html
+#
+___debug___ = __debug__
+# ___debug___ = False
+___debug___ = True
+
 
 import os
 import sys
 import time
 import datetime
-import platform
 import tempfile
 import subprocess
 import logging
@@ -36,6 +50,7 @@ import logging.handlers
 #
 #   - Fonctions d'initialisation des EXÉCUTABLES et RÉPERTOIRES utilisés :
 #   ( in autotests )    . def set_paths_and_miscellaneous
+#                       . def get_paths_and_miscellaneous
 #
 # ===========================================================================
 #
@@ -100,11 +115,12 @@ class ScriptSkeleton:
     pour faciliter les traitements de base.
     """
 
-    def __init__(self,
-                 module_name: str = None,
-                 module_file: str = __file__,
-                 arguments: list = None
-                 ):
+    def __init__(
+        self,
+        module_name: str = None,
+        module_file: str = __file__,
+        arguments: list = None
+        ):
         """
         """
 
@@ -113,7 +129,8 @@ class ScriptSkeleton:
         # Non, bien sûr... !!!
         #
         self._we_are_inside_del_method = False
-  
+        self._we_already_said_bye = False
+
         # Variables internes pour stockage du journal des opérations :
         #
         #       _logHandler pointe sur le fichier TXT temporaire de log ;
@@ -148,14 +165,22 @@ class ScriptSkeleton:
         self.logItem = None
         self.logItem = self.on_ouvre_le_journal(module_name)
         
-        # Le dictionnaire « _paths_and_miscellaneous » contiendra la liste des fichiers
+        # Le dictionnaire « paths_and_miscellaneous » contiendra la liste des fichiers
         # & répertoires utiles, i-e il contiendra à minima les entrées suivantes :
+        #
+        #       - working_SYSTEM,
+        #       - working_RELEASE,
+        #       - working_VERSION,
+        #       - working_MACHINE_NAME,
+        #       - working_MACHINE_TYPE,
         #       - working_PATH_FULL,
         #       - working_PATH_DSK_ONLY,
         #       - working_PATH_DIRS_ONLY,
         #       - EXE_txt_editor,
+        #       - EXE_(..),
         #       - DIR_(..),
-        #       - DLL_(..).
+        #       - DLL_(..),
+        #       - ARG_(..).
         #
         # Il est aussi possible de se servir de ce dictionnaire pour conserver des
         # paramètres généraux du programme, tels que ceux par exemple lus dans une
@@ -164,7 +189,6 @@ class ScriptSkeleton:
         #       - shutdown_TYPE.
         #
         self.shutdown_dflt = shutdown_none
-        self.we_already_said_bye = False
 
         self.paths_and_miscellaneous = {}
 
@@ -192,10 +216,11 @@ class ScriptSkeleton:
 #
 # ---------------------------------------------------------------------------
 
-    def set_paths_and_miscellaneous(self,
-                                    directory: str = '',
-                                    print_configuration: bool = True
-                                    ) -> str:
+    def set_paths_and_miscellaneous(
+        self,
+        directory: str = '',
+        print_configuration: bool = ___debug___
+        ) -> str:
         """ Définitions des différents exécutables dont se sert ce script.
     
         :param directory: répertoire où il faut lire & écrire les fichiers. Si ce
@@ -210,9 +235,50 @@ class ScriptSkeleton:
 
         log = self.logItem
 
-        # On initialise les comportements généraux de ce programme.
+        # Où sommes-nous ?
         #
-        self.paths_and_miscellaneous[shutdown_TYPE] = self.shutdown_dflt
+        try:
+            module = 'OS'
+            where_are_we = os.uname()
+
+            our_system = where_are_we.sysname
+            our_release = where_are_we.release
+            our_version = where_are_we.version
+            our_machine = where_are_we.machine
+            our_nodename = where_are_we.nodename
+
+        except AttributeError:
+
+            from platform import uname
+            log.debug('« os.uname() » inconnu.')
+            log.debug('')
+
+            module = 'PLATFORM'
+            where_are_we = uname()
+
+            our_system = where_are_we.system
+            our_release = where_are_we.release
+            our_version = where_are_we.version
+            our_machine = where_are_we.machine
+            our_nodename = where_are_we.node
+
+        log.debug('Dixit « %s » : %s', module, where_are_we)
+        log.debug('Nous sommes sur un système %s %s version %s.',
+            our_system,
+            our_release,
+            our_version
+            )
+        log.debug("Notre machine est de type %s et s'appelle :",
+            our_machine
+            )
+        log.debug('\t%s', our_nodename)
+        log.debug('')
+
+        self.paths_and_miscellaneous['working_SYSTEM'] = our_system
+        self.paths_and_miscellaneous['working_RELEASE'] = our_release
+        self.paths_and_miscellaneous['working_VERSION'] = our_version
+        self.paths_and_miscellaneous['working_MACHINE_TYPE'] = our_machine
+        self.paths_and_miscellaneous['working_MACHINE_NAME'] = our_nodename
 
         # On initialise le répertoire de travail de ce programme.
         #
@@ -234,9 +300,21 @@ class ScriptSkeleton:
         self.paths_and_miscellaneous['working_PATH_DSK_ONLY'] = path_drive
         self.paths_and_miscellaneous['working_PATH_DIRS_ONLY'] = path_tail
 
+        # On initialise les comportements généraux de ce programme.
+        #
+        self.paths_and_miscellaneous[shutdown_TYPE] = self.shutdown_dflt
+
+
+        #
+        ###########################################################
+        ########## INITIALISATION dans le cas de WINDOWS ##########
+        ###########################################################
+        #
+
+
         # On définit les autres répertoires & fichiers utilisés.
         #
-        if os.name == 'nt':
+        if os.name.upper() == 'NT':
 
             # On tient compte de la version de Windows, ie est-elle 32 ou 64 bits ?
             #
@@ -302,7 +380,6 @@ class ScriptSkeleton:
             dir_txt_editor = None
             exe_txt_editor = None
 
-            log.debug('')
             log.debug("Recherche d'EditPad Pro :")
         
             for dir_to_try in editpad_dir_list:
@@ -333,31 +410,98 @@ class ScriptSkeleton:
             # un son, on a besoin d'un player et d'un fichier multimédia.
             # ( cf la fonction "on_sonne_le_reveil" ).
             #
-            if platform.system() == 'Windows' and platform.release() == 'XP':
+            if our_system == 'Windows' and our_release == 'XP':
 
                 # Sous Windows XP, on joue un son d'une autre façon que
                 # sur les autres plateformes car le son généré par un
                 # "\a" y est peu audible...
                 #
-                root = os.environ['SYSTEMROOT']
-                player = os.path.join(root, 'System32', 'mplay32.exe')
+                # Je n'ai testé le "mplay32.exe" que sous Windows XP,
+                # c'est pour cela que je ne me sers de ce logiciel que
+                # dans ce cas, mais il doit fonctionner sous beaucoup
+                # de versions de Windows avant XP voire qq unes après
+                # (ou au moins son ancêtre i.e mplay.exe)... Par contre,
+                # à partir de Windows 7, il faut utiliser le lecteur
+                # Windows Media ou une autre solution...
+                #
+                # Donc ici, pour réveiller l'utilisateur, on joue une
+                # mélodie sous Windows via le Media Player l'avantage
+                # de cette méthode est que le son est réglable et que
+                # cela marche sur un PC de bureau comme sur un portable...
+                #
+                player_exe = os.path.join(root, 'System32', 'mplay32.exe')
+                player_arg = ('/play', '/close')
                 played = os.path.join(root, 'Media', 'Windows XP Battery Low.wav')
 
-                self.paths_and_miscellaneous['EXE_player'] = player
-                self.paths_and_miscellaneous['EXE_played'] = played
+            else:
+                player_exe = None
+                player_arg = None
+                played = None
+
+
+        #
+        ###########################################################
+        ########## INITIALISATION pour un OS INCONNU  #############
+        ###########################################################
+        #
+
 
         else:
             log.critical('UNSUPPORTED SYSTEM :')
             log.critical('')
-            log.critical("Les programmes nécessaires à ce module sont à définir pour l'OS « %s ».", os.name)
+            log.critical(
+                "Les programmes nécessaires à ce module sont à définir pour l'OS « %s ».",
+                os.name.upper()
+                )
             log.critical('')
-            raise AssertionError
+
+            # On ne lève dorénavant plus une exception :
+            #
+            #   raise AssertionError
+            #
+            # ... car :
+            #
+            #   1 - Cela faisait planter le script dans ce cas, i-e en fin
+            # de script, lorsque l'on passait dans notre méthode __del__,
+            # celle-ci apelait « self.on_dit_au_revoir() », qui elle-même
+            # lançait « self.edit_file_txt() », qui elle-même invoquait :
+            #
+            #   self.paths_and_miscellaneous['EXE_txt_editor']
+            #
+            # ... qui n'avait pas été défini !!!
+            #
+            # On ne peut donc lever une exception qu'après avoir défini tous
+            # les « paths and miscellaneous » !!!
+            #
+            # Sinon, on va droit au PLANTAGE !!!
+            #
+            exe_txt_editor = None
+
+            libre_office_dir = None
+            libre_office_exec = None
+            libre_writer_exec = None
+
+            player_exe = None
+            player_arg = None
+            played = None
+
+
+        #
+        ###########################################################
+        ########## CLÔTURE de notre INITIALISATION ################
+        ###########################################################
+        #
+
 
         self.paths_and_miscellaneous['EXE_txt_editor'] = exe_txt_editor
 
         self.paths_and_miscellaneous['DIR_libre_office'] = libre_office_dir
         self.paths_and_miscellaneous['EXE_libre_office'] = libre_office_exec
         self.paths_and_miscellaneous['EXE_libre_writer'] = libre_writer_exec
+
+        self.paths_and_miscellaneous['EXE_player'] = player_exe
+        self.paths_and_miscellaneous['ARG_player'] = player_arg
+        self.paths_and_miscellaneous['EXE_played'] = played
 
         if print_configuration:
 
@@ -370,7 +514,7 @@ class ScriptSkeleton:
             log.debug(msg_architecture)
             log.debug('')
             for key, value in self.paths_and_miscellaneous.items():
-                log.debug('%s = %s', key, value)
+                log.debug('%s = %s', key, str(value))
             log.debug('')
 
         # On teste l'existence des répertoires & fichiers définis,
@@ -379,42 +523,104 @@ class ScriptSkeleton:
         # construits à partir de la fonction os.getcwd() ou que l'
         # a déjà vérifié leur existence ).
         #
-        msg_1 = ''
-        msg_2 = ''
+        all_found = True
 
         for key, value in self.paths_and_miscellaneous.items():
 
-            key_short = key[0:4]
+            if value is not None:
 
-            if key_short in ('DIR_', 'EXE_', 'DLL_'):
-                log.debug("Test de l'existence de %s...", key)
+                msg_1 = ''
+                key_short = key[0:4]
 
-            if key_short == 'DIR_' and not os.path.isdir(value):
-                msg_1 = 'répertoire'
-                msg_2 = value
-                break
+                if key_short in ('DIR_', 'EXE_', 'DLL_'):
+                    log.debug("Test de l'existence de %s...", key)
 
-            elif key_short == 'EXE_' and not os.path.isfile(value):
-                msg_1 = 'fichier'
-                msg_2 = value
-                break
+                if key_short == 'DIR_' and not os.path.isdir(value):
+                    msg_1 = 'répertoire'
+                    msg_2 = value
+                    break
 
-            elif key_short == 'DLL_' and not os.path.isfile(value):
-                msg_1 = 'fichier DLL'
-                msg_2 = value
-                break
+                elif key_short == 'EXE_' and not os.path.isfile(value):
+                    msg_1 = 'fichier'
+                    msg_2 = value
+                    break
 
-        if msg_1 == '':
+                elif key_short == 'DLL_' and not os.path.isfile(value):
+                    msg_1 = 'module DLL'
+                    msg_2 = value
+                    break
+
+                if msg_1 != '':
+                    all_found = False
+                    log.critical("Le %s suivant n'existe pas :", msg_1)
+                    log.critical('      %s', msg_2)
+                    log.critical('')
+
+                    # Dorénavant, on ne lève plus d'exception, le script
+                    # se poursuit et testera lorsque besoin si une valeur
+                    # est à None ou pas...
+                    #
+                    # raise AssertionError
+
+        if all_found:
             log.debug('-> Ok, présence de tous les fichiers & répertoires.')
             log.debug('')
 
-        else:
-            log.critical("Le %s suivant n'existe pas :", msg_1)
-            log.critical('      %s', msg_2)
-            log.critical('')
-            raise AssertionError
-
         return working_path
+
+
+    def get_paths_and_miscellaneous(
+        self,
+        index: str
+        ) -> str:
+        """ Pour retrouver de façon « protégée » une valeur de notre
+        dictionnaire : on va ainsi, par exemple, tester si l'index
+        est bien présent dans le dictionnaire...
+        
+        :param index: l'index de la valeur souhaitée.
+
+        :return: la valeur souhaitée.
+        """
+
+        log = self.logItem
+        value = None
+
+        if self.paths_and_miscellaneous is None \
+            or len(self.paths_and_miscellaneous) == 0:
+
+            log.debug('« %s » est inconnu.', index)
+            log.debug("« paths_and_miscellaneous » est vide.")
+            log.debug('')
+
+        else:
+
+            keys = self.paths_and_miscellaneous.keys()
+
+            if index in keys:
+
+                value = self.paths_and_miscellaneous[index]
+
+            if value is None:
+
+                # Si l'index n'a pas été trouvé, ou que la valeur dans
+                # le dictionnaire est None, alors on informe.
+                #
+                msg = '« {0} » est inconnu'.format(index)
+
+                if 'working_SYSTEM' in keys and 'working_MACHINE_TYPE' in keys:
+
+                    msg = msg + ' sur {0} et {1}.'.format(
+                        self.paths_and_miscellaneous['working_SYSTEM'],
+                        self.paths_and_miscellaneous['working_MACHINE_TYPE']
+                        )
+
+                else:
+                    msg = msg + ' sur {0}.'.format(os.name.upper())
+
+                log.debug(msg)
+                log.debug('')
+            
+        return value
 
 
 # ---------------------------------------------------------------------------
@@ -425,11 +631,13 @@ class ScriptSkeleton:
 #
 # ---------------------------------------------------------------------------
 
-    def on_ouvre_le_journal(self,
-                            log_name,
-                            directory: str = '',
-                            also_on_screen: bool = True,
-                            warning_on_reopen: bool = True) -> logging.Logger:
+    def on_ouvre_le_journal(
+        self,
+        log_name,
+        directory: str = '',
+        also_on_screen: bool = ___debug___,
+        warning_on_reopen: bool = ___debug___
+        ) -> logging.Logger:
         """ Pour initialiser la journalisation des messages dans un fichier,
             voire également à l'écran.
 
@@ -523,12 +731,7 @@ class ScriptSkeleton:
             journal.debug('')
             journal.debug('OUVERTURE du journal « %s »...', log_name)
             journal.debug('')
-            journal.debug('... tenu via PYTHON version %s', sys.version)
-            journal.debug('')
-            journal.debug('... sur un système %s %s version %s.',
-                          platform.system(),
-                          platform.release(),
-                          platform.version())
+            journal.debug('... tenu via PYTHON version %s.', sys.version)
             journal.debug('')
 
             self._logFile = file_object.name
@@ -556,7 +759,11 @@ class ScriptSkeleton:
         return journal
 
 
-    def on_se_presente(self, module_file: str, arguments: list) -> int:
+    def on_se_presente(
+        self,
+        module_file: str,
+        arguments: list
+        ) -> int:
         """ Fonction permettant d'afficher des informations d'ordre général ( nom du module,
         ses arguments, ... ) lorsqu'un module est appelé en tant que __main__.
     
@@ -614,10 +821,12 @@ class ScriptSkeleton:
         return nb_parameters_in
 
 
-    def on_dit_au_revoir(self,
-                         log_to_open: bool = True,
-                         log_to_remove: bool = False,
-                         pause_to_make: bool = True):
+    def on_dit_au_revoir(
+        self,
+        log_to_open: bool = ___debug___,
+        log_to_remove: bool = not ___debug___,
+        pause_to_make: bool = ___debug___
+        ):
         """ Fonction a appeler avant de quitter ce module. Elle permet
         essentiellement de lancer l'affichage du fichier de LOG... et
         de rendre la main à l'environnement appelant.
@@ -639,14 +848,14 @@ class ScriptSkeleton:
         # ... ni le détruire 2 fois,
         # ...
         #
-        if self.we_already_said_bye:
+        if self._we_already_said_bye:
             print('Nous avons déjà dit au revoir...')
             return
 
         # Nous sommes ici sûrs que c'est la première fois
         # que nous parcourons cette fonction.
         #
-        self.we_already_said_bye = True
+        self._we_already_said_bye = True
 
         log = self.logItem
 
@@ -845,44 +1054,63 @@ class ScriptSkeleton:
 
         log = self.logItem
 
-        if platform.system() == 'Windows' and platform.release() == 'XP':
-            # Sous Windows XP, on joue un son d'une autre façon que
-            # sur les autres plateformes car le son généré par un
+        player = self.get_paths_and_miscellaneous('EXE_player')
+
+        if player is None:
+
+            # Sur la plupart des OS, on utilise une commande
+            # très générique, ie envoyer le caractère ASCII
+            # \a sur le port de sortie...
+            #
+            sys.stdout.write('\a')
+            sys.stdout.flush()
+
+        else:
+
+            # Sur certains OS, on utilise un logiciel audio,
+            # qui va jouer un fichier bien précis.
+            #
+            # Ainsi, sous Windows XP, on joue un son d'une autre
+            # façon que "\a" ci-dessous, car le son généré par 1
             # "\a" y est peu audible...
             #
-            # Je n'ai testé le "mplay32.exe" que sous Windows XP,
-            # c'est pour cela que je ne me sers de ce logiciel que
-            # dans ce cas, mais il doit fonctionner sous beaucoup
-            # de versions de Windows avant XP voire qq unes après
-            # (ou au moins son ancêtre i.e mplay.exe)... Par contre,
-            # à partir de Windows 7, il faut utiliser le lecteur
-            # Windows Media ou une autre solution...
+            # Jouer une mélodie via un player a pour avantage que
+            # le son est réglable et que cela marche sur un PC de
+            # bureau comme sur un portable...
             #
-            player = self.paths_and_miscellaneous['EXE_player']
-            played = self.paths_and_miscellaneous['EXE_played']
+            command_line = [player]
 
-            # Donc ici, pour réveiller l'utilisateur, on joue une
-            # mélodie sous Windows via le Media Player l'avantage
-            # de cette méthode est que le son est réglable et que
-            # cela marche sur un PC de bureau comme sur un portable...
-            #
-            command_line = [player, '/play', '/close', played]
+            args = self.get_paths_and_miscellaneous('ARG_player')
+
+            if args is None:
+                pass
+
+            elif isinstance(args, list):
+                for arg in args:
+                    command_line.append(arg)
+
+            else:
+                command_line.append(args)
+
+            played = self.get_paths_and_miscellaneous('EXE_played')
+
+            if played is None:
+                pass
+
+            else:
+                command_line.append(played)
+
             log.debug("Commande exécutée = %s", command_line)
 
             process = subprocess.Popen(command_line)
             log.debug('Code Retour : « %s ».', process.returncode)
             log.debug('')
 
-        else:
-            # Sur les autres OS, on utilise une commande très
-            # générique, ie envoyer le caractère ASCII \a sur
-            # le port de sortie...
-            #
-            sys.stdout.write('\a')
-            sys.stdout.flush()
 
-
-    def shutdown_please(self, how: str = None):
+    def shutdown_please(
+        self,
+        how: str = None
+        ):
         """ Pour éteindre la machine hôte lorsque l'on est sous Windows.
     
         Cette fonction ne marche pas dans tous les cas, il faut les privilèges
@@ -915,7 +1143,7 @@ class ScriptSkeleton:
         delai_9mn33_en_secondes = 573
         delay_performed_by_system = False
 
-        if os.name == 'nt':
+        if os.name.upper() == 'NT':
 
             # On analyse la façon dont l'arrêt doit être
             # configuré.
@@ -1037,9 +1265,15 @@ class ScriptSkeleton:
         else:
             log.critical('UNSUPPORTED SYSTEM :')
             log.critical('')
-            log.critical("La procédure d'arrêt machine pour l'OS « %s » n'est pas définie.", os.name)
+            log.critical(
+                "La procédure d'arrêt machine pour l'OS « %s » n'est pas définie.",
+                os.name.upper()
+                )
             log.critical('')
-            raise AssertionError
+
+            # On ne lève plus d'exception dans ce cas.
+            #
+            # raise AssertionError
 
 
 # ---------------------------------------------------------------------------
@@ -1076,13 +1310,14 @@ class ScriptSkeleton:
 #
 # ---------------------------------------------------------------------------
 
-    def ask_answer(self,
-                   prompt: str,
-                   default: str ='',
-                   retries: int =3,
-                   reminder: str ='Please try again!',
-                   play_sound: bool = False
-                   ) -> bool:
+    def ask_answer(
+        self,
+        prompt: str,
+        default: str ='',
+        retries: int =3,
+        reminder: str ='Please try again!',
+        play_sound: bool = ___debug___
+        ) -> bool:
         """
 
         // TODO : Cette fonction ask_answer est à RETRAVAILLER & FINALISER !!!
@@ -1123,10 +1358,11 @@ class ScriptSkeleton:
             print()
 
 
-    def choose_in_a_list(self,
-                         list_of_choices: list, 
-                         default_choice: int = -1
-                         ) -> int:
+    def choose_in_a_list(
+        self,
+        list_of_choices: list, 
+        default_choice: int = -1
+        ) -> int:
         """ Prend en charge le choix par l'utilisateur d'une valeur dans une liste.
     
         Cette fonction va afficher la liste d'une manière qui permette à l'utilisateur
@@ -1235,11 +1471,12 @@ class ScriptSkeleton:
         return the_choice_is
 
 
-    def choose_in_a_dict(self,
-                         dict_of_choices: dict,
-                         default_key: object = None,
-                         restricted: bool = True
-                         ) -> object:
+    def choose_in_a_dict(
+        self,
+        dict_of_choices: dict,
+        default_key: object = None,
+        restricted: bool = True
+        ) -> object:
         """ Prend en charge le choix par l'utilisateur d'une valeur dans un dictionnaire.
 
         Cette fonction va afficher le dictionnaire d'une manière qui permette à
@@ -1424,10 +1661,11 @@ class ScriptSkeleton:
 #
 # ---------------------------------------------------------------------------
 
-    def search_files_from_a_mask(self,
-                                 directory: str = None,
-                                 mask: str = '*'
-                                 ) -> list:
+    def search_files_from_a_mask(
+        self,
+        directory: str = None,
+        mask: str = '*'
+        ) -> list:
         """ Cherche dans un répertoire tous les fichiers qui
         correspondent à un certain masque.
 
@@ -1451,6 +1689,11 @@ class ScriptSkeleton:
         if directory is None:
             log.debug('Pas de répertoire de recherche indiqué.')
             log.debug('Donc ce sera le répertoire de travail.')
+
+            # On n'appelle pas ici get_paths_and_miscellaneous()
+            # car on sait que 'working_PATH_FULL' est toujours
+            # défini à ce stade...
+            #
             directory = self.paths_and_miscellaneous[
                 'working_PATH_FULL'
                 ]
@@ -1709,53 +1952,61 @@ class ScriptSkeleton:
         log.debug('Initialisation de LibreOffice :')
         log.debug('')
 
-        libre_office_exec = self.paths_and_miscellaneous[
+        libre_office_exec = self.get_paths_and_miscellaneous(
             'EXE_libre_office'
-            ]
+            )
 
-        log.debug('... i-e lancement de : « %s »', libre_office_exec)
-        log.debug('')
+        if libre_office_exec is None:
+            pass
+        else:
 
-        command_line = [
-            libre_office_exec,
+            log.debug('... i-e lancement de : « %s »', libre_office_exec)
+            log.debug('')
+
+            command_line = [
+                libre_office_exec,
+                #
+                # --headless permet de lancer LibreOffice sans son
+                # interface utilisateur. ( Starts in "headless mode"
+                # which allows using the application without user
+                # interface. This special mode can be used when the
+                # application is controlled by external clients via
+                # the API https://api.libreoffice.org/ )
+                #
+                '--headless',
+                '--nocrashreport',
+                '--nodefault',
+                '--nofirststartwizard',
+                '--nolockcheck',
+                '--nologo',
+                '--norestore'
+                ]
+
+            log.debug("Commande exécutée = %s", command_line)
+            log.debug('')
+
+            # On utilise Popen() car run() attend lui que Libre
+            # Office nous rende la main, ce qu'il ne fait que si
+            # on le ferme... puisqu'on ne lui demande rien de
+            # spécifique à faire et que donc Libre Office garde
+            # la main !!!
             #
-            # --headless permet de lancer LibreOffice sans son
-            # interface utilisateur. ( Starts in "headless mode"
-            # which allows using the application without user
-            # interface. This special mode can be used when the
-            # application is controlled by external clients via
-            # the API https://api.libreoffice.org/ )
+            #   process = subprocess.run(command_line)
             #
-            '--headless',
-            '--nocrashreport',
-            '--nodefault',
-            '--nofirststartwizard',
-            '--nolockcheck',
-            '--nologo',
-            '--norestore'
-            ]
+            # Cela dit, il doit y avoir un paramètre de run() qui
+            # permet cela.
+            #
+            process = subprocess.Popen(command_line)
 
-        log.debug("Commande exécutée = %s", command_line)
-        log.debug('')
-
-        # On utilise Popen() car run() attend lui que Libre
-        # Office nous rende la main, ce qu'il ne fait que si
-        # on le ferme... puisqu'on ne lui demande rien de
-        # spécifique à faire et que donc Libre Office garde
-        # la main !!!
-        #
-        #   process = subprocess.run(command_line)
-        #
-        # Cela dit, il doit y avoir un paramètre de run() qui
-        # permet cela.
-        #
-        process = subprocess.Popen(command_line)
-
-        log.debug('Code Retour : « %s ».', process.returncode)
-        log.debug('')
+            log.debug('Code Retour : « %s ».', process.returncode)
+            log.debug('')
 
 
-    def convert_to_pdf_run(self, wait: bool = True, *args):
+    def convert_to_pdf_run(
+        self,
+        wait: bool = True,
+        *args
+        ):
         """ Conversion de fichier(s) DOCX ( ou ODT, TXT, etc )
         en fichier(s) PDF :
 
@@ -1786,71 +2037,79 @@ class ScriptSkeleton:
         log.debug("Conversion de fichier(s) en PDF via LibreOffice :")
         log.debug('')
 
-        libre_office_exec = self.paths_and_miscellaneous[
+        libre_office_exec = self.get_paths_and_miscellaneous(
             'EXE_libre_office'
-            ]
+            )
 
-        for file_in in args:
+        if libre_office_exec is None:
+            pass
+        else:
 
-            command_line = [
-                libre_office_exec,
-                #
-                # --invisible :
-                #
-                #   Drapeau que j'utilisais dans mon ancien batch DOS
-                #   "INVENTAIRE - #NotSynchronized.bat" ie je lançais :
-                #
-                #   SET LiO_DEFAULT="C:\Program Files\LibreOffice 5\program\soffice.exe"
-                #   [..]
-                #   SET LibreOffice=%LiO_DEFAULT%
-                #   SET NOM_LENOVO_S340=BONZZZ-7
-                #   SET LiO_LENOVO_S340="C:\Program Files\LibreOffice\program\soffice.exe"
-                #   [..]
-                #   IF '%PC_NAME%' == '%NOM_LENOVO_S340%' SET LibreOffice=%LiO_LENOVO_S340%
-                #   [..]
-                #   %LibreOffice% --invisible macro:///Standard.Convert.ConvertTXTtoPDF(%RESULT_FILE_TXT%)
-                #
-                '--invisible',
-                '--convert-to', 'pdf',
-                '--outdir', '.',
-                file_in
-                ]
+            for file_in in args:
 
-            log.debug("Fichier à traiter = %s", file_in)
-            log.debug("Commande exécutée = %s", command_line)
+                command_line = [
+                    libre_office_exec,
+                    #
+                    # --invisible :
+                    #
+                    #   Drapeau que j'utilisais dans mon ancien batch DOS
+                    #   "INVENTAIRE - #NotSynchronized.bat" ie je lançais :
+                    #
+                    #   SET LiO_DEFAULT="C:\Program Files\LibreOffice 5\program\soffice.exe"
+                    #   [..]
+                    #   SET LibreOffice=%LiO_DEFAULT%
+                    #   SET NOM_LENOVO_S340=BONZZZ-7
+                    #   SET LiO_LENOVO_S340="C:\Program Files\LibreOffice\program\soffice.exe"
+                    #   [..]
+                    #   IF '%PC_NAME%' == '%NOM_LENOVO_S340%' SET LibreOffice=%LiO_LENOVO_S340%
+                    #   [..]
+                    #   %LibreOffice% --invisible macro:///Standard.Convert.ConvertTXTtoPDF(%RESULT_FILE_TXT%)
+                    #
+                    '--invisible',
+                    '--convert-to', 'pdf',
+                    '--outdir', '.',
+                    file_in
+                    ]
 
-            if wait:
+                log.debug("Fichier à traiter = %s", file_in)
+                log.debug("Commande exécutée = %s", command_line)
 
-                # Il est ici demandé que convert_to_pdf_run()
-                # garde la main tant que la conversion n'est
-                # achevée.
-                #
-                # J'utilise donc run() et non Popen(), car c'
-                # est ainsi ce que LibreOffice va faire.
-                #
-                # C'est parfait puisque lorsque l'on va enfin
-                # retrouver la main, on saura que la conversion
-                # sera achevée ( et donc on sera sûr que le PDF
-                # est bien présent... ).
-                #
-                log.debug('... exécution SYNCHRONE.')
-                process = subprocess.run(command_line)
+                if wait:
 
-            else:
+                    # Il est ici demandé que convert_to_pdf_run()
+                    # garde la main tant que la conversion n'est
+                    # achevée.
+                    #
+                    # J'utilise donc run() et non Popen(), car c'
+                    # est ainsi ce que LibreOffice va faire.
+                    #
+                    # C'est parfait puisque lorsque l'on va enfin
+                    # retrouver la main, on saura que la conversion
+                    # sera achevée ( et donc on sera sûr que le PDF
+                    # est bien présent... ).
+                    #
+                    log.debug('... exécution SYNCHRONE.')
+                    process = subprocess.run(command_line)
 
-                # On rend la main à l'appelant dès que l'on
-                # a lancé la conversion, sans se soucier de
-                # si elle est achevée ni comment...
-                #
-                log.debug('... exécution ASYNCHRONE.')
-                process = subprocess.Popen(command_line)
+                else:
 
-            log.debug('')
-            log.debug('Code Retour : « %s ».', process.returncode)
-            log.debug('')
+                    # On rend la main à l'appelant dès que l'on
+                    # a lancé la conversion, sans se soucier de
+                    # si elle est achevée ni comment...
+                    #
+                    log.debug('... exécution ASYNCHRONE.')
+                    process = subprocess.Popen(command_line)
 
-            
-    def edit_file_txt(self, wait: bool = True, *args):
+                log.debug('')
+                log.debug('Code Retour : « %s ».', process.returncode)
+                log.debug('')
+
+
+    def edit_file_txt(
+        self,
+        wait: bool = True,
+        *args
+        ):
         """ Édition d'un ou plusieurs fichiers au format TXT.
 
         :param wait: attend-t-on la fin de l'édition pour
@@ -1866,56 +2125,61 @@ class ScriptSkeleton:
 
         # On retrouve l'éditeur de texte.
         #
-        exe_txt_editor = self.paths_and_miscellaneous[
+        exe_txt_editor = self.get_paths_and_miscellaneous(
             'EXE_txt_editor'
-            ]
+            )
 
-        for file_to_edit in args:
+        if exe_txt_editor is None:
+            pass
+        else:
 
-            # On lance l'éditeur de texte avec notre fichier
-            # comme paramètre.
-            #
-            command_line = [exe_txt_editor, file_to_edit]
+            for file_to_edit in args:
 
-            log.debug("Fichier à traiter = %s", file_to_edit)
-            log.debug("Commande exécutée = %s", command_line)
-
-            if wait:
-
-                # Il est ici demandé que convert_to_pdf_run()
-                # garde la main tant que la conversion n'est
-                # achevée.
+                # On lance l'éditeur de texte avec notre fichier
+                # comme paramètre.
                 #
-                # J'utilise donc run() et non Popen(), car c'
-                # est ainsi ce que LibreOffice va faire.
-                #
-                # C'est parfait puisque lorsque l'on va enfin
-                # retrouver la main, on saura que la conversion
-                # sera achevée ( et donc on sera sûr que le PDF
-                # est bien présent... ).
-                #
-                log.debug('... exécution SYNCHRONE.')
-                process = subprocess.run(command_line)
+                command_line = [exe_txt_editor, file_to_edit]
 
-            else:
+                log.debug("Fichier à traiter = %s", file_to_edit)
+                log.debug("Commande exécutée = %s", command_line)
 
-                # On rend la main à l'appelant dès que l'on
-                # a lancé la conversion, sans se soucier de
-                # si elle est achevée ni comment...
-                #
-                log.debug('... exécution ASYNCHRONE.')
-                process = subprocess.Popen(command_line)
+                if wait:
 
-            log.debug('')
-            log.debug('Code Retour : « %s ».', process.returncode)
-            log.debug('')
+                    # Il est ici demandé que convert_to_pdf_run()
+                    # garde la main tant que la conversion n'est
+                    # achevée.
+                    #
+                    # J'utilise donc run() et non Popen(), car c'
+                    # est ainsi ce que LibreOffice va faire.
+                    #
+                    # C'est parfait puisque lorsque l'on va enfin
+                    # retrouver la main, on saura que la conversion
+                    # sera achevée ( et donc on sera sûr que le PDF
+                    # est bien présent... ).
+                    #
+                    log.debug('... exécution SYNCHRONE.')
+                    process = subprocess.run(command_line)
+
+                else:
+
+                    # On rend la main à l'appelant dès que l'on
+                    # a lancé la conversion, sans se soucier de
+                    # si elle est achevée ni comment...
+                    #
+                    log.debug('... exécution ASYNCHRONE.')
+                    process = subprocess.Popen(command_line)
+
+                log.debug('')
+                log.debug('Code Retour : « %s ».', process.returncode)
+                log.debug('')
 
 
     def compare_files(
         self,
         txt_compare: bool = True,
         operation_wanted: str = 'difference',
-        *args) -> set:
+        *args
+        ) -> set:
         """ Comparaison de 2 ou plusieurs fichiers.
 
         :param txt_compare: faut-il comparer au format texte
@@ -2556,10 +2820,7 @@ if __name__ == "__main__":
         log.info('\t==================================')
         log.info('')
         log.info('')
-        my_skeleton.on_dit_au_revoir(
-            log_to_open = True,
-            log_to_remove = True
-            )
+        my_skeleton.on_dit_au_revoir()
 
     else:
 
