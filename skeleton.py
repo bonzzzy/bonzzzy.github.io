@@ -12,7 +12,7 @@
 #
 #       Cf https://docs.python.org/3/library/constants.html
 #
-___debug___ = __debug__
+# ___debug___ = __debug__
 # ___debug___ = False
 ___debug___ = True
 
@@ -110,9 +110,19 @@ shutdown_complete = 'complete'
 shutdown_hibernate = 'hibernate'
 
 
+def _(msg):
+    """ Pour n'afficher certains messages qu'en mode
+    DEBUG.
+    """
+
+    if ___debug___:
+        print(msg)
+
+
 class ScriptSkeleton:
-    """ Squelette d'un script Python, avec différentes propriétés et méthodes
-    pour faciliter les traitements de base.
+    """ Squelette d'un script Python, avec différentes
+    propriétés et méthodes pour faciliter les traitements
+    de base.
     """
 
     def __init__(
@@ -123,6 +133,10 @@ class ScriptSkeleton:
         ):
         """
         """
+
+        _('')
+        _(33 * '#' + ' Mode DEBUG ' + 33 * '#')
+        _('')
 
         # Sommes-nous dans notre méthode __del__ ?
         #
@@ -263,15 +277,15 @@ class ScriptSkeleton:
             our_nodename = where_are_we.node
 
         log.debug('Dixit « %s » : %s', module, where_are_we)
-        log.debug('Nous sommes sur un système %s %s version %s.',
+        log.debug('Système « %s » « %s » version « %s ».',
             our_system,
             our_release,
             our_version
             )
-        log.debug("Notre machine est de type %s et s'appelle :",
+        log.debug("Notre machine est de type « %s » et s'appelle :",
             our_machine
             )
-        log.debug('\t%s', our_nodename)
+        log.debug('\t« %s »', our_nodename)
         log.debug('')
 
         self.paths_and_miscellaneous['working_SYSTEM'] = our_system
@@ -285,7 +299,7 @@ class ScriptSkeleton:
         is_64bits = sys.maxsize > 2 ** 32
         str_size = '64' if is_64bits else '32'
         msg_architecture = 'ARCHITECTURE ' + str_size \
-                         + ' bits sur OS ' + our_system
+                         + ' bits sur OS « ' + our_system + ' ».'
 
         # On initialise le répertoire de travail de ce programme.
         #
@@ -631,7 +645,7 @@ class ScriptSkeleton:
         self,
         log_name,
         directory: str = '',
-        also_on_screen: bool = ___debug___,
+        also_on_screen: bool = True,
         warning_on_reopen: bool = ___debug___
         ) -> logging.Logger:
         """ Pour initialiser la journalisation des messages dans un fichier,
@@ -731,8 +745,17 @@ class ScriptSkeleton:
             journal.debug('')
 
             self._logFile = file_object.name
-            journal.info('Les messages seront stockés dans le fichier : %s.', file_object.name)
+            journal.info(
+                'Les messages seront stockés dans le fichier : %s.',
+                file_object.name
+                )
             journal.info('')
+
+            msg = 33 * '#' + ' Mode DEBUG ' + 33 * '#'
+            journal.debug('#' * len(msg))
+            journal.debug(msg)
+            journal.debug('#' * len(msg))
+            journal.debug('')
 
         else:
 
@@ -845,192 +868,210 @@ class ScriptSkeleton:
         # ...
         #
         if self._we_already_said_bye:
-            print('Nous avons déjà dit au revoir...')
-            return
-
-        # Nous sommes ici sûrs que c'est la première fois
-        # que nous parcourons cette fonction.
-        #
-        self._we_already_said_bye = True
-
-        log = self.logItem
-
-        log.info('BYE')
-        log.info('')
-
-        # S'il est demandé d'afficher le journal en fin de
-        # traitements, on le fait.
-        #
-        if log_to_open:
-
-            # On lance l'éditeur de texte afin que l'utilisateur puisse
-            # voir le fichier log.
-            #
-            self.edit_file_txt(False, self._logFile)
-
-        # On libère le fichier LOG de sa fonction de handler.
-        #
-        # Ce qui permettra que ce fichier soit détruit s'il est devenu
-        # inutile...
-        #
-        log.removeHandler(self._logHandler)
-        self._logHandler.close()
-
-        # On va adopter un comportement final différent
-        # suivant que ce script est lancé au travers de
-        # Python IDLE ou pas.
-        #
-        idle_windows = 'pythonw.exe'
-
-        if idle_windows in sys.executable:
-
-            # Lorsque nous sommes sous IDLE, nous en
-            # tenons pas compte du paramètre demandant
-            # de détruire ou pas le fichier LOG...
-            #
-            # Dans ce cas, il s'agit en effet, souvent,
-            # d'une phase de mise au point d'un script,
-            # donc nous laissons quoi qu'il arrive le
-            # LOG, afin qu'il puisse être examiné.
-            #
-            print("PS: Je ne détruis pas le LOG,")
-            print()
-
-            # Nous sommes sous IDLE donc nous affichons
-            # seulement un message avant de rendre la
-            # main à cette console.
-            #
-            print("... et je rends la main à IDLE.")
-            print()
+            _('Nous avons déjà dit au revoir...')
 
         else:
-    
-            # Tout s'est bien passé donc on détruit le
-            # fichier LOG, pour ne pas encombrer...
+            # Nous sommes ici sûrs que c'est la première
+            # fois que nous parcourons cette fonction.
             #
-            # On ne va toutefois pas détruire ce fichier
-            # tant que l'utilisateur n'a pas frappé la
-            # touche entrée.
-            #
-            if log_to_remove and os.path.isfile(self._logFile):
+            self._we_already_said_bye = True
 
-                log.info("Tout s'est bien passé : on va détruire le LOG.")
-                log.info('')
+            log = self.logItem
 
-            # Nous ne sommes pas sous IDLE, donc nous
-            # marquons une pause afin que la fenêtre
-            # d'exécution ne disparaisse pas subitement.
-            #
-            if pause_to_make:
-
-                input('PRESS ENTER TO CONTINUE...')
-                print()
-
-            # On a laissé le temps à l'utilisateur de
-            # consulter le fichier LOG. On peut donc
-            # le détruire.
-            #
-            if log_to_remove and os.path.isfile(self._logFile):
-
-                os.remove(self._logFile)
-
-            # Si nous étions sous IDLE, ce exit() aurait
-            # aussi fermé IDLE !!!
-            #
-            log.info("FIN DU SCRIPT")
+            log.info('BYE')
             log.info('')
 
-            if self._we_are_inside_del_method:
+            # S'il est demandé d'afficher le journal en
+            # fin de traitements, on le fait.
+            #
+            if log_to_open:
 
-                log.info('Nous sommes en train de nous détruire ( __del__ ).')
-                log.debug('... Nous ne lançons pas exit(), sinon ça bug !!!!')
-                log.debug('... Cela dit, le mieux est de ne RIEN lancer !!!!')
-                log.info('')
+                # On lance l'éditeur de texte afin que l'
+                # utilisateur puisse voir le fichier log.
+                #
+                self.edit_file_txt(False, self._logFile)
+
+            # On libère le fichier LOG de sa fonction de
+            # handler.
+            #
+            # Ce qui permettra que ce fichier soit détruit
+            # s'il est devenu inutile...
+            #
+            log.removeHandler(self._logHandler)
+            self._logHandler.close()
+
+            #
+            ################################################
+            ########## ATTENTION : Cette limite dépassée, il
+            ########## ne faut plus écrire dans le LOG car
+            ########## Python peut avoir détruit toutes les
+            ########## classes qui le gère !!!
+            ##########
+            ########## En effet, nous avons libéré ci-dessus
+            ########## la dernière dépendance à celui-ci.
+            ################################################
+            #
+
+            # On va adopter un comportement final différent
+            # suivant que ce script est lancé au travers de
+            # Python IDLE ou pas.
+            #
+            idle_windows = 'pythonw.exe'
+
+            if idle_windows in sys.executable:
+
+                # Lorsque nous sommes sous IDLE, nous en
+                # tenons pas compte du paramètre demandant
+                # de détruire ou pas le fichier LOG...
+                #
+                # Dans ce cas, il s'agit en effet, souvent,
+                # d'une phase de mise au point d'un script,
+                # donc nous laissons quoi qu'il arrive le
+                # LOG, afin qu'il puisse être examiné.
+                #
+                _("PS: Je ne détruis pas le LOG,")
+                _()
+
+                # Nous sommes sous IDLE donc nous affichons
+                # seulement un message avant de rendre la
+                # main à cette console.
+                #
+                _("... et je rends la main à IDLE.")
+                _()
 
             else:
+    
+                # Tout s'est bien passé donc on détruit le
+                # fichier LOG, pour ne pas encombrer...
+                #
+                # On ne va toutefois pas détruire ce fichier
+                # tant que l'utilisateur n'a pas frappé la
+                # touche entrée.
+                #
+                if log_to_remove and os.path.isfile(
+                    self._logFile
+                    ):
 
-                log.info("Ciel ! On m'a tué...")
-                log.info('')
+                    _('Destruction du LOG.')
+                    _('')
 
-                # Si nous ne sommes pas dans notre méthode
-                # __del__, nous pouvons lancer le exit() de
-                # fin.
+                # Nous ne sommes pas sous IDLE, donc nous
+                # marquons une pause afin que la fenêtre
+                # d'exécution ne disparaisse pas subitement.
                 #
-                # En effet, si nous le faisions dans __del__,
-                # Python communiquerait les msgs suivants :
-                #
-                #       FIN DU SCRIPT
-                #
-                #       Exception ignored in: <function ScriptSkeleton.__del__ at 0x0000021D99CC1510>
-                #       Traceback (most recent call last):
-                #         File "C:\Program Files\make_movie\skeleton.py", line 167, in __del__
-                #         File "C:\Program Files\make_movie\skeleton.py", line 729, in on_dit_au_revoir
-                #       NameError: name 'exit' is not defined
-                #
-                # ... ou ( ? ) :
-                #
-                #       FIN DU SCRIPT
-                #
-                #       Exception ignored in: <function ScriptSkeleton.__del__ at 0x0000026AC1D11750>
-                #       Traceback (most recent call last):
-                #         File "K:\_Know\Info\Dvpt\RALISA~1\Src\_Python\my Crew History\skeleton.py", line 168, in __del__
-                #         File "K:\_Know\Info\Dvpt\RALISA~1\Src\_Python\my Crew History\skeleton.py", line 722, in on_dit_au_revoir
-                #         File "C:\Program Files\Python310\lib\_sitebuiltins.py", line 26, in __call__
-                #       SystemExit: None
-                #
-                pass
-                # exit()
+                if pause_to_make:
 
-                # Ceci étant dit, le mieux est probablement
-                # de ne rien lancer du tout !!! Et donc de
-                # laisser ci-dessous le « pass » au lieu du
-                # « exit() ».
+                    input('PRESS ENTER TO CONTINUE...')
+                    print()
+
+                # On a laissé le temps à l'utilisateur de
+                # consulter le fichier LOG. On peut donc
+                # le détruire.
                 #
-                # En effet, cf :
-                #
-                #   https://stackoverflow.com/questions/19747371/python-exit-commands-why-so-many-and-when-should-each-be-used/
-                #   in _Know\Info\Dvpt\Réalisation\Langages\Python\- et - exit(), system.exit(), raise SystemExit, etc.rar
-                #
-                #   « Nevertheless, quit should not be used in production code.
-                #   This is because it only works if the site module is loaded.
-                #   Instead, this function should only be used in the interpreter.
-                #   [..]
-                #   However, like quit, exit is considered bad to use in production
-                #   code and should be reserved for use in the interpreter. This is
-                #   because it too relies on the site module. »
-                #
-                # Par ailleurs, si on utilise l'une ou l'autre
-                # des syntaxes suivantes :
-                #
-                #   . raise SystemExit
-                #
-                #   . sys.exit()
-                #
-                # Python communiquera les msgs suivants :
-                #
-                #       FIN DU SCRIPT
-                #
-                #       Exception ignored in: <function ScriptSkeleton.__del__ at 0x000002DBEEB616C0>
-                #       Traceback (most recent call last):
-                #         File "K:\_Know\Info\Dvpt\RALISA~1\Src\_Python\my Crew History\skeleton.py", line 176, in __del__
-                #         File "K:\_Know\Info\Dvpt\RALISA~1\Src\_Python\my Crew History\skeleton.py", line 730, in on_dit_au_revoir
-                #       SystemExit:
-                #
-                # DONC, FINALEMENT, DANS CETTE BRANCHE, ON NE
-                # FAIT PLUS RIEN !!!
-                #
-                # On pourrait même virer tout le code de cette
-                # fonction à partir de :
-                #
-                #       if self._we_are_inside_del_method:
-                #
-                # ... et donc également virer tout ce qui dans
-                # la classe ScriptSkeleton a rapport avec la
-                # propriété « _we_are_inside_del_method ».
-                #
-                # J'ai toutefois gardé tout ce code et ces infos
-                # ( commentaires ) pour me souvenir de tout cela.
-                #
+                if log_to_remove and os.path.isfile(self._logFile):
+
+                    os.remove(self._logFile)
+
+                _('FIN DU SCRIPT')
+                _('')
+
+                if self._we_are_inside_del_method:
+
+                    _('Nous sommes en train de nous détruire ( __del__ ).')
+                    _('... Nous ne lançons pas exit(), sinon ça bug !!!!')
+                    _('... Cela dit, le mieux est de ne RIEN lancer !!!!')
+                    _('')
+
+                else:
+
+                    _("Ciel ! On m'a tué...")
+                    _('')
+
+                    # Si nous ne sommes pas dans la méthode
+                    # __del__, nous pouvons lancer le exit() 
+                    # de fin.
+                    #
+                    # En fait, si on l'insérait dans __del__,
+                    # Python afficherait les msgs suivants :
+                    #
+                    #       FIN DU SCRIPT
+                    #
+                    #       Exception ignored in: <function ScriptSkeleton.__del__ at 0x0000021D99CC1510>
+                    #       Traceback (most recent call last):
+                    #         File "C:\Program Files\make_movie\skeleton.py", line 167, in __del__
+                    #         File "C:\Program Files\make_movie\skeleton.py", line 729, in on_dit_au_revoir
+                    #       NameError: name 'exit' is not defined
+                    #
+                    # ... ou ( ? ) :
+                    #
+                    #       FIN DU SCRIPT
+                    #
+                    #       Exception ignored in: <function ScriptSkeleton.__del__ at 0x0000026AC1D11750>
+                    #       Traceback (most recent call last):
+                    #         File "K:\_Know\Info\Dvpt\RALISA~1\Src\_Python\my Crew History\skeleton.py", line 168, in __del__
+                    #         File "K:\_Know\Info\Dvpt\RALISA~1\Src\_Python\my Crew History\skeleton.py", line 722, in on_dit_au_revoir
+                    #         File "C:\Program Files\Python310\lib\_sitebuiltins.py", line 26, in __call__
+                    #       SystemExit: None
+                    #
+                    # Par ailleurs, si nous étions sous IDLE,
+                    # cet exit() aurait aussi fermé IDLE !!!
+                    #
+                    pass
+                    # exit()
+
+                    # Ceci étant dit, le mieux est probablement
+                    # de ne rien lancer du tout !!! Et donc de
+                    # laisser ci-dessus le « pass » au lieu du
+                    # « exit() ».
+                    #
+                    # En effet, cf :
+                    #
+                    #   https://stackoverflow.com/questions/19747371/python-exit-commands-why-so-many-and-when-should-each-be-used/
+                    #   in _Know\Info\Dvpt\Réalisation\Langages\Python\- et - exit(), system.exit(), raise SystemExit, etc.rar
+                    #
+                    #   « Nevertheless, quit should not be used in production code.
+                    #   This is because it only works if the site module is loaded.
+                    #   Instead, this function should only be used in the interpreter.
+                    #   [..]
+                    #   However, like quit, exit is considered bad to use in production
+                    #   code and should be reserved for use in the interpreter. This is
+                    #   because it too relies on the site module. »
+                    #
+                    # Par ailleurs, si on utilise l'une ou l'
+                    # autre des syntaxes suivantes :
+                    #
+                    #   . raise SystemExit
+                    #
+                    #   . sys.exit()
+                    #
+                    # Python communiquera les msgs suivants :
+                    #
+                    #       FIN DU SCRIPT
+                    #
+                    #       Exception ignored in: <function ScriptSkeleton.__del__ at 0x000002DBEEB616C0>
+                    #       Traceback (most recent call last):
+                    #         File "K:\_Know\Info\Dvpt\RALISA~1\Src\_Python\my Crew History\skeleton.py", line 176, in __del__
+                    #         File "K:\_Know\Info\Dvpt\RALISA~1\Src\_Python\my Crew History\skeleton.py", line 730, in on_dit_au_revoir
+                    #       SystemExit:
+                    #
+                    # DONC, FINALEMENT, DANS CETTE BRANCHE, ON
+                    # NE FAIT PLUS RIEN !!!
+                    #
+                    # On pourrait même virer tout le code de
+                    # cette fonction à partir de :
+                    #
+                    #       if self._we_are_inside_del_method:
+                    #
+                    # ... et donc également virer tout ce qui,
+                    # dans notre classe ScriptSkeleton, a un
+                    # rapport avec la propriété :
+                    #
+                    #       « _we_are_inside_del_method ».
+                    #
+                    # J'ai toutefois gardé tout ce code et ces
+                    # infos ( commentaires ) pour me souvenir
+                    # de tout cela.
+                    #
 
 
 # ---------------------------------------------------------------------------
