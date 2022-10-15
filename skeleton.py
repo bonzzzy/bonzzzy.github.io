@@ -12,9 +12,9 @@
 #
 #       Cf https://docs.python.org/3/library/constants.html
 #
-# ___debug___ = __debug__
-# ___debug___ = False
 ___debug___ = True
+#___debug___ = False
+#___debug___ = __debug__
 
 
 import os
@@ -645,7 +645,7 @@ class ScriptSkeleton:
         self,
         log_name,
         directory: str = '',
-        also_on_screen: bool = True,
+        also_on_screen: bool = ___debug___,
         warning_on_reopen: bool = ___debug___
         ) -> logging.Logger:
         """ Pour initialiser la journalisation des messages dans un fichier,
@@ -876,15 +876,37 @@ class ScriptSkeleton:
             #
             self._we_already_said_bye = True
 
-            log = self.logItem
+            # ATTENTION : Si ns sommes dans notre méthode
+            # __del__() et donc dans le ramasse-miettes
+            # de Python. Potentiellement, les objets LOG
+            # sont aussi en train d’être détruits, voire
+            # l'ont déjà été... !!!
+            #
+            if self._we_are_inside_del_method:
 
-            log.info('BYE')
-            log.info('')
+                shw_info = lambda x: print(x)
+                shw_debug = lambda x: _(x)
+
+            else:
+
+                log = self.logItem
+
+                shw_info = lambda x: log.info(x)
+                shw_debug = lambda x: log.debug(x)
+
+            shw_info('BYE')
+            shw_info('')
 
             # S'il est demandé d'afficher le journal en
             # fin de traitements, on le fait.
             #
-            if log_to_open:
+            # ... sauf si nous sommes déjà dans notre
+            # méthode __del(), sinon cela va planter car
+            # bcp d'objets sont déjà potentiellement en
+            # cours de destruction !!!
+            #
+            if not self._we_are_inside_del_method \
+            and log_to_open:
 
                 # On lance l'éditeur de texte afin que l'
                 # utilisateur puisse voir le fichier log.
@@ -897,7 +919,19 @@ class ScriptSkeleton:
             # Ce qui permettra que ce fichier soit détruit
             # s'il est devenu inutile...
             #
-            log.removeHandler(self._logHandler)
+            # ... sauf si nous sommes déjà dans notre
+            # méthode __del(), sinon cela va planter car
+            # bcp d'objets sont déjà potentiellement en
+            # cours de destruction !!!
+            #
+            if self._we_are_inside_del_method:
+
+                pass
+
+            else:
+
+                log.removeHandler(self._logHandler)
+
             self._logHandler.close()
 
             #
@@ -908,7 +942,9 @@ class ScriptSkeleton:
             ########## classes qui le gère !!!
             ##########
             ########## En effet, nous avons libéré ci-dessus
-            ########## la dernière dépendance à celui-ci.
+            ########## la dernière dépendance à celui-ci, si
+            ########## nous n'avions pas demandé à ce que le
+            ########## LOG apparaisse aussi à l'écran...
             ################################################
             #
 
