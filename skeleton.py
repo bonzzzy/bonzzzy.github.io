@@ -862,15 +862,29 @@ class ScriptSkeleton:
         :return:
         """
 
-        # Pour ne pas dire 2 fois au revoir...
-        # ... ie pour ne pas ouvrir 2 fois le fichier LOG,
-        # ... ni le détruire 2 fois,
-        # ...
+        # Pour ne pas dire 2 fois au revoir, ni détruire 2 fois
+        # le fichier LOG...
+        #
+        # Normalement, l'utilisateur de ce module doit appeler
+        # on_dit_au_revoir() lorsqu’il a fini... mais, au cas où
+        # il ne le ferait pas, nous appelons aussi cette fonction
+        # dans notre méthode __del__(). Nous réalisons alors ce
+        # que nous pouvons encore faire...
         #
         if self._we_already_said_bye:
+
+            # La fonction on_dit_aurevoir() a déjà été appelée
+            # par l'utilisateur de ce module. Nous revenons ici
+            # probablement depuis notre méthode __del__ qui nous
+            # appelle aussi, et ce afin que nous puissions faire
+            # ce que nous pouvons encore faire si l’utilisateur
+            # du module n’a pas appeler on_dit_aurevoir(), comme
+            # il le devrait...
+            #
             _('Nous avons déjà dit au revoir...')
 
         else:
+
             # Nous sommes ici sûrs que c'est la première
             # fois que nous parcourons cette fonction.
             #
@@ -881,6 +895,18 @@ class ScriptSkeleton:
             # de Python. Potentiellement, les objets LOG
             # sont aussi en train d’être détruits, voire
             # l'ont déjà été... !!!
+            #
+            # Donc nous nous prémunissons contre cela via
+            # des fonctions LAMBDA qui appelerons ou pas
+            # notre log, suivant le cas.
+            #
+            # D'expérience, appeler dans notre __del__()
+            # le module LOG ne pose en fait pas de pb sous
+            # Python 3.10 et Windows 10.
+            #
+            # Par contre, sous Python 3.9 ( a-Shell ) et
+            # iOS, cela provoque des bugs d’appels dans le
+            # module LOG qui ne retrouve plus ses petits...
             #
             if self._we_are_inside_del_method:
 
