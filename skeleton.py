@@ -73,7 +73,7 @@ import logging.handlers
 # ===========================================================================
 #
 #   - Fonctions de SAISIE de DONNÉES :
-#   ( in autotests )    . def ask_answer
+#   ( in autotests )    . def ask_yes_or_no
 #   ( in autotests )    . def choose_in_a_list
 #   ( in autotests )    . def choose_in_a_dict
 #
@@ -110,9 +110,21 @@ shutdown_complete = 'complete'
 shutdown_hibernate = 'hibernate'
 
 
-def _(msg):
-    """ Pour n'afficher certains messages qu'en mode
-    DEBUG.
+yes_or_no = {
+    'y'     : True,
+    'yes'   : True,
+    'o'     : True,
+    'oui'   : True,
+    'ok'    : True,
+    'n'     : False,
+    'no'    : False,
+    'nope'  : False,
+    'non'   : False
+}
+
+
+def _debug_(msg):
+    """ Pour n'afficher certains messages qu'en mode DEBUG.
     """
 
     if ___debug___:
@@ -134,9 +146,9 @@ class ScriptSkeleton:
         """
         """
 
-        _('')
-        _(33 * '#' + ' Mode DEBUG ' + 33 * '#')
-        _('')
+        _debug_('')
+        _debug_(33 * '#' + ' Mode DEBUG ' + 33 * '#')
+        _debug_('')
 
         # Sommes-nous dans notre méthode __del__ ?
         #
@@ -881,7 +893,7 @@ class ScriptSkeleton:
             # du module n’a pas appeler on_dit_aurevoir(), comme
             # il le devrait...
             #
-            _('Nous avons déjà dit au revoir...')
+            _debug_('Nous avons déjà dit au revoir...')
 
         else:
 
@@ -911,7 +923,7 @@ class ScriptSkeleton:
             if self._we_are_inside_del_method:
 
                 shw_info = lambda x: print(x)
-                shw_debug = lambda x: _(x)
+                shw_debug = lambda x: _debug_(x)
 
             else:
 
@@ -991,15 +1003,15 @@ class ScriptSkeleton:
                 # donc nous laissons quoi qu'il arrive le
                 # LOG, afin qu'il puisse être examiné.
                 #
-                _("PS: Je ne détruis pas le LOG,")
-                _()
+                _debug_('PS: Je ne détruis pas le LOG')
+                _debug_()
 
                 # Nous sommes sous IDLE donc nous affichons
                 # seulement un message avant de rendre la
                 # main à cette console.
                 #
-                _("... et je rends la main à IDLE.")
-                _()
+                _debug_('... et je rends la main à IDLE.')
+                _debug_()
 
             else:
     
@@ -1014,8 +1026,8 @@ class ScriptSkeleton:
                     self._logFile
                     ):
 
-                    _('Destruction du LOG.')
-                    _('')
+                    _debug_('Destruction du LOG.')
+                    _debug_('')
 
                 # Nous ne sommes pas sous IDLE, donc nous
                 # marquons une pause afin que la fenêtre
@@ -1034,20 +1046,20 @@ class ScriptSkeleton:
 
                     os.remove(self._logFile)
 
-                _('FIN DU SCRIPT')
-                _('')
+                _debug_('FIN DU SCRIPT')
+                _debug_('')
 
                 if self._we_are_inside_del_method:
 
-                    _('Nous sommes en train de nous détruire ( __del__ ).')
-                    _('... Nous ne lançons pas exit(), sinon ça bug !!!!')
-                    _('... Cela dit, le mieux est de ne RIEN lancer !!!!')
-                    _('')
+                    _debug_('Nous nous AUTO-DÉTRUISONS ( __del__ ).')
+                    _debug_('... Nous ne lançons pas exit(), sinon ça bug !')
+                    _debug_('... Cela dit, le mieux est de ne RIEN lancer !')
+                    _debug_('')
 
                 else:
 
-                    _("Ciel ! On m'a tué...")
-                    _('')
+                    _debug_("Ciel ! On m'a tué...")
+                    _debug_('')
 
                     # Si nous ne sommes pas dans la méthode
                     # __del__, nous pouvons lancer le exit() 
@@ -1409,49 +1421,86 @@ class ScriptSkeleton:
 #
 # ---------------------------------------------------------------------------
 
-    def ask_answer(
+    def ask_yes_or_no(
         self,
         prompt: str,
-        default: str ='',
-        retries: int =3,
-        reminder: str ='Please try again!',
+        default: str = None,
+        retries: int = 3,
+        reminder: str = 'Veuillez recommencer !',
+        raise_on_retry_error: bool = False,
         play_sound: bool = ___debug___
         ) -> bool:
         """
 
-        // TODO : Cette fonction ask_answer est à RETRAVAILLER & FINALISER !!!
+        // TODO : Cette fonction ask_yes_or_no est à RETRAVAILLER & FINALISER !!!
 
-        :param prompt:
-        :param default:
-        :param retries:
-        :param reminder:
-        :param play_sound:
-        :return:
+        :param prompt: le texte de la question.
+
+        :param default: la réponse par défaut.
+
+        :param retries: le nombre d'essais autorisés.
+
+        :param reminder: le texte à afficher si un essai échoue.
+
+        :param raise_on_retry_error: faut-il lever une exception de
+        type ValueError si l'utilisateur dépasse le nombre d'essais
+        autorisés ? Si non, on renverra la valeur définie par défaut.
+        Si toutefois la valeur par défaut n'existe pas, alors on lève
+        une exception AssertionError...
+
+        :param play_sound: faut-il « réveiller » l'utilisateur via
+        une sonnerie avant de poser la question ?
+
+        :return: YES ( True ) or FALSE ( No ).
         """
-
-        if not default == '':
-            prompt = prompt + " ['" + default + "' par défaut] "
 
         if play_sound:
             self.on_sonne_le_reveil()
+
+        if default is not None:
+            default = default.strip(' \t')
+
+        dflt_empty = default is None or default == ''
+
+        if dflt_empty:
+            dflt_valid = False
+
+        else:
+            dflt_valid = default in yes_or_no.keys()
+
+            if dflt_valid:
+                prompt = prompt + " [« " + default + " » par défaut] "
+
+            else:
+                raise AssertionError('Incorrect default value !!!')
 
         while True:
 
             answer = input(prompt)
             print()
 
-            if answer == '':
+            if answer.strip(' \t') == '':
                 answer = default
 
-            if answer in ('y', 'yes', 'o', 'oui', 'ok'):
-                return True
-
-            if answer in ('n', 'no', 'nope', 'non'):
-                return False
+            if answer in yes_or_no.keys():
+                return yes_or_no[answer]
 
             retries = retries - 1
-            if retries < 0:
-                raise ValueError('invalid user response')
+
+            if retries <= 0:
+
+                if raise_on_retry_error:
+                    raise ValueError('Too much retry...')
+
+                elif dflt_valid:
+                    print('Too much retry... Using default !')
+                    print()
+                    return yes_or_no[default]
+
+                else:
+                    raise AssertionError(
+                        'Too much retry... And no default value !'
+                        )
 
             print(reminder)
             print()
@@ -1741,7 +1790,7 @@ class ScriptSkeleton:
                                 log.warning('')
                                 prompt = 'Confirmez-vous cette réponse ?'
 
-                                if ask_answer(prompt, 'o'):
+                                if ask_yes_or_no(prompt, 'o'):
                                     break
 
             log.debug('Clé choisie     : %s', str(the_choice_is))
@@ -2459,7 +2508,7 @@ if __name__ == "__main__":
     # -----------------------------------------------------------------------
     # #######################################################################
     #
-    user_answer = my_skeleton.ask_answer(
+    user_answer = my_skeleton.ask_yes_or_no(
         "Voulez-vous que je réalise mes AUTOTESTS de SAISIE ?",
         'non'
         )
@@ -2505,7 +2554,7 @@ if __name__ == "__main__":
     # -----------------------------------------------------------------------
     # #######################################################################
     #
-    user_answer = my_skeleton.ask_answer(
+    user_answer = my_skeleton.ask_yes_or_no(
         "Voulez-vous que je réalise mes AUTOTESTS de RECHERCHE ?",
         'non'
         )
@@ -2535,7 +2584,7 @@ if __name__ == "__main__":
     # -----------------------------------------------------------------------
     # #######################################################################
     #
-    user_answer = my_skeleton.ask_answer(
+    user_answer = my_skeleton.ask_yes_or_no(
         "Voulez-vous que je réalise mes AUTOTESTS de PDF ?",
         'non'
         )
@@ -2619,7 +2668,7 @@ if __name__ == "__main__":
     # -----------------------------------------------------------------------
     # #######################################################################
     #
-    user_answer = my_skeleton.ask_answer(
+    user_answer = my_skeleton.ask_yes_or_no(
         "Voulez-vous que je réalise mes AUTOTESTS de COMPARAISON de FICHIERS ?",
         'non'
         )
@@ -2805,7 +2854,7 @@ if __name__ == "__main__":
     # -----------------------------------------------------------------------
     # #######################################################################
     #
-    user_answer = my_skeleton.ask_answer(
+    user_answer = my_skeleton.ask_yes_or_no(
         "Voulez-vous que je réalise les AUTOTESTS de get_unused_filename() ?",
         'non'
         )
@@ -2864,7 +2913,7 @@ if __name__ == "__main__":
     # -----------------------------------------------------------------------
     # #######################################################################
     #
-    user_answer = my_skeleton.ask_answer(
+    user_answer = my_skeleton.ask_yes_or_no(
         "Voulez-vous que je réalise mes AUTOTESTS de SHUTDOWN ?",
         'non'
         )
@@ -2904,7 +2953,7 @@ if __name__ == "__main__":
     # -----------------------------------------------------------------------
     # #######################################################################
     #
-    user_answer = my_skeleton.ask_answer(
+    user_answer = my_skeleton.ask_yes_or_no(
         "En sortant, voulez-vous dire AU REVOIR ?",
         'non'
         )
