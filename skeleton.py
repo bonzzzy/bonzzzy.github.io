@@ -111,15 +111,20 @@ shutdown_hibernate = 'hibernate'
 
 
 yes_or_no = {
-    'y'     : True,
-    'yes'   : True,
-    'o'     : True,
-    'oui'   : True,
-    'ok'    : True,
-    'n'     : False,
-    'no'    : False,
-    'nope'  : False,
-    'non'   : False
+    'eng'   : {
+        'y'     : True,
+        'yes'   : True,
+        'ok'    : True,
+        'n'     : False,
+        'no'    : False,
+        'nope'  : False,
+        },
+    'fre'   : {
+        'o'     : True,
+        'oui'   : True,
+        'n'     : False,
+        'non'   : False
+        }
 }
 
 
@@ -129,6 +134,15 @@ def _debug_(msg):
 
     if ___debug___:
         print(msg)
+
+
+def _print_(msg, journal):
+    """ Pour afficher un msg, tout en le journalisant en
+    même temps.
+    """
+
+    journal.debug(msg)
+    print(msg)
 
 
 class ScriptSkeleton:
@@ -1425,8 +1439,9 @@ class ScriptSkeleton:
         self,
         prompt: str,
         default: str = None,
+        langage: str = 'fre',
         retries: int = 3,
-        reminder: str = 'Veuillez recommencer !',
+        reminder: str = 'Please try again !',
         raise_on_retry_error: bool = False,
         play_sound: bool = ___debug___
         ) -> bool:
@@ -1457,6 +1472,14 @@ class ScriptSkeleton:
         if play_sound:
             self.on_sonne_le_reveil()
 
+        if langage in yes_or_no.keys():
+            our_yes_or_no = yes_or_no[langage]
+
+        else:
+            our_yes_or_no = yes_or_no['eng']
+            print('Unknown language... Using english...')
+            print()
+
         if default is not None:
             default = default.strip(' \t')
 
@@ -1466,13 +1489,24 @@ class ScriptSkeleton:
             dflt_valid = False
 
         else:
-            dflt_valid = default in yes_or_no.keys()
+            dflt_valid = default in our_yes_or_no.keys()
 
             if dflt_valid:
                 prompt = prompt + " [« " + default + " » par défaut] "
 
             else:
                 raise AssertionError('Incorrect default value !!!')
+
+        our_yes = []
+        our_no = []
+
+        for key, value in our_yes_or_no.items():
+
+            if value:
+                our_yes.append(key)
+
+            else:
+                our_no.append(key)
 
         while True:
 
@@ -1482,8 +1516,8 @@ class ScriptSkeleton:
             if answer.strip(' \t') == '':
                 answer = default
 
-            if answer in yes_or_no.keys():
-                return yes_or_no[answer]
+            if answer in our_yes_or_no.keys():
+                return our_yes_or_no[answer]
 
             retries = retries - 1
 
@@ -1495,7 +1529,7 @@ class ScriptSkeleton:
                 elif dflt_valid:
                     print('Too much retry... Using default !')
                     print()
-                    return yes_or_no[default]
+                    return our_yes_or_no[default]
 
                 else:
                     raise AssertionError(
@@ -1503,6 +1537,8 @@ class ScriptSkeleton:
                         )
 
             print(reminder)
+            print('OK =', our_yes)
+            print('NO =', our_no)
             print()
 
 
@@ -2524,8 +2560,11 @@ if __name__ == "__main__":
         log.info('')
         log.info('')
 
-        fruits = ["apple", "banana", "cherry"]
-        my_skeleton.choose_in_a_list(fruits, 1)
+        fruits = ['apple', 'banana', 'cherry']
+        idx = my_skeleton.choose_in_a_list(fruits, 1)
+
+        if idx >= 0:
+            _print_('Votre réponse = ' + fruits[idx], log)
 
         log.info('')
 
@@ -2533,7 +2572,7 @@ if __name__ == "__main__":
         # que Python ne plante pas en le parcourant.
         #
         log.info('\t==================================')
-        log.info('\t>>> TEST de choose_in_a_list() <<<')
+        log.info('\t>>> TEST de choose_in_a_dict() <<<')
         log.info('\t==================================')
         log.info('')
         log.info('')
@@ -2543,7 +2582,10 @@ if __name__ == "__main__":
             "France":"Paris",
             "India":"New Delhi"
             }
-        my_skeleton.choose_in_a_dict(capitals, 'India')
+        key = my_skeleton.choose_in_a_dict(capitals, 'India')
+
+        if key is not None:
+            _print_('Votre réponse = ' + capitals[key], log)
 
         log.info('')
 
