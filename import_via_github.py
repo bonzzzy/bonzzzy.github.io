@@ -96,7 +96,7 @@ if __name__ == "__main__":
     file_lst = []
     for counter, parameter in enumerate(sys.argv, start=0):
         if counter > 0:
-            file_lst.append(parameter)
+            file_lst.append(parameter.strip(' \t'))
 
     print()
     print('AIDE :')
