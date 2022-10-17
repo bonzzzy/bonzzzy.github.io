@@ -28,57 +28,9 @@ _my_log = None
 _my_skeleton = None
 
 
-def save_in_iPad(
-    file_name: str,
-    content: str,
-    character_set: str = None
-    ):
-    """
-    """
-    file_dst = file_name
-
-    if os.path.exists(file_dst):
-
-        if os.name == 'posix' \
-            and 'm360173' in os.uname().nodename:
-            # Sur mon iPad, j'écrase le fichier
-            # déjà existant... car je ne fais
-            # AUCUNE MODIFICATION depuis 1 iPad
-            # ( ce n'est pas ergonomique puisque
-            # je n'ai pas de clavier ).
-            #
-            print('')
-            prompt = \
-                'ATTENTION : on va écraser « ' \
-                + file_dst \
-                + ' » !!!'
-            input(prompt)
-
-        else:
-            name, ext = os.path.splitext(file_dst)
-            tmp_dst = name + " { new version }" + ext
-            file_dst = _my_skeleton.get_unused_filename(tmp_dst)
-
-    if character_set is None:
-
-        # Le jeu de caractères qui nous concerne est
-        # celui des « byte strings ». Donc on ouvre
-        # notre fichier au format « b(yte) ».
-        #
-        flag = "wb"
-
-    else:
-
-        # On ouvre notre fichier au format « t(ext) ».
-        #
-        flag = "wt"
-
-    with open(file_dst, flag) as new_file:
-
-        new_file.write(content)
-
-
 if __name__ == "__main__":
+
+    skeleton.___debug___ = ___debug___
 
     _my_skeleton = skeleton.ScriptSkeleton(
         module_name = "Import using GitHub",
@@ -87,7 +39,6 @@ if __name__ == "__main__":
         )
 
     _my_log = _my_skeleton.logItem
-    skeleton.___debug___ = ___debug___
     default_src = os.path.basename(__file__)
 
     # On recherche les fichiers à importer qui seraient
@@ -164,10 +115,21 @@ if __name__ == "__main__":
 
             else:
 
-                save_in_iPad(
-                    file_src,
+                # Sur mon iPad, j'écrase le fichier
+                # déjà existant... car je ne fais
+                # AUCUNE MODIFICATION depuis 1 iPad
+                # ( ce n'est pas ergonomique puisque
+                # je n'ai pas de clavier ).
+                #
+                erase_file = os.name == 'posix' \
+                    and 'm360173' in os.uname().nodename
+
+                _my_skeleton.save_strings_to_file(
                     content,
-                    character_set
+                    destination = file_src,
+                    ok_to_erase = erase_file,
+                    ask_confirm = True,
+                    coding = character_set
                     )
 
                 print('')

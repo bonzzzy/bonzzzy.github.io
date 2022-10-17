@@ -70,6 +70,7 @@ from socket import timeout
 #   - Fonctions pour journalisation des WARNINGS et ERREURS ( DÉBOGAGE ) : 
 #   ( in autotests )    . def on_ouvre_le_journal
 #   ( in autotests )    . def on_se_presente
+#                       . def debug_mode
 #   ( in autotests )    . def on_dit_au_revoir
 #
 # ===========================================================================
@@ -77,7 +78,7 @@ from socket import timeout
 #   - Fonctions spécifiques à l'OPERATING SYSTEM ( bip, shutdown, ... ) :
 #   ( in autotests )    . def on_sonne_le_reveil
 #   ( in autotests )    . def shutdown_please
-
+#
 # ===========================================================================
 #
 #   - Fonctions spécifiques au TEMPS :
@@ -99,7 +100,7 @@ from socket import timeout
 #                       . def edit_file_txt
 #   ( in autotests )    . def compare_files
 #   ( in autotests )    . def get_unused_filename
-
+#                       . def save_strings_to_file
 # ===========================================================================
 #
 #   - Fonctions spécifiques au WEB ( browser, HTML, HTTP, etc ) :
@@ -253,10 +254,6 @@ class ScriptSkeleton:
         """
         """
 
-        _warn_('')
-        _warn_(33 * '#' + ' Mode DEBUG ' + 33 * '#')
-        _warn_('')
-
         # Sommes-nous dans notre méthode __del__ ?
         #
         # Non, bien sûr... !!!
@@ -349,7 +346,7 @@ class ScriptSkeleton:
 #
 # ---------------------------------------------------------------------------
 
-    
+
     def show_paths_and_miscellaneous(
         self,
         printer, # function
@@ -838,6 +835,7 @@ class ScriptSkeleton:
 #
 # ---------------------------------------------------------------------------
 
+
     def on_ouvre_le_journal(
         self,
         log_name,
@@ -948,11 +946,11 @@ class ScriptSkeleton:
                 )
             journal.info('')
 
-            msg = 33 * '#' + ' Mode DEBUG ' + 33 * '#'
-            journal.debug('#' * len(msg))
-            journal.debug(msg)
-            journal.debug('#' * len(msg))
-            journal.debug('')
+            if ___debug___:
+
+                # On affiche notre mode de déboggage quand il est actif.
+                #
+                self.debug_mode(True)
 
         else:
 
@@ -1035,6 +1033,35 @@ class ScriptSkeleton:
         log.debug('')
 
         return nb_parameters_in
+
+
+    def debug_mode(
+        self,
+        state: bool = True
+        ):
+        """ Pour lancer / arrêter notre mode DEBUG depuis le script
+        appelant.
+
+        Cela permet au script appelant de moduler les informations
+        que nous émettons, au regard des parties de son corps, plus
+        ou moins sensibles / nouvelles, qu'il veut observer.
+
+        :param state: True pour (re)démarrer le mode, False pour
+        le stopper.
+        """
+
+        log = self.logItem
+
+        ___debug___ = state
+
+        action = 'start' if state else 'stop'
+        deco = 33 * '#'
+        msg = deco + ' Mode DEBUG ( ' + action + ' ) ' + deco
+
+        _show_('#' * len(msg), log)
+        _show_(msg, log)
+        _show_('#' * len(msg), log)
+        _show_('', log)
 
 
     def on_dit_au_revoir(
@@ -1338,6 +1365,7 @@ class ScriptSkeleton:
 #
 # ---------------------------------------------------------------------------
 
+
     def on_sonne_le_reveil(self):
         """ Pour émettre un "beep" afin de prévenir l'utilisateur qu'une action
         lui est demandée...
@@ -1577,6 +1605,7 @@ class ScriptSkeleton:
 #
 # ---------------------------------------------------------------------------
 
+
     def build_now_string(
         self,
         desired_form: str = "%Y%m%d - %Hh%Mmn%Ss%fms"
@@ -1602,6 +1631,7 @@ class ScriptSkeleton:
 #   Fonctions de SAISIE de DONNÉES.
 #
 # ---------------------------------------------------------------------------
+
 
     def ask_yes_or_no(
         self,
@@ -2021,6 +2051,7 @@ class ScriptSkeleton:
 #   Fonctions de GESTION de FICHIERS.
 #
 # ---------------------------------------------------------------------------
+
 
     def search_files_from_a_mask(
         self,
@@ -2699,6 +2730,94 @@ class ScriptSkeleton:
         # convient.
         #
         return alt_name
+
+
+    def save_strings_to_file(
+        self,
+        *args,
+        destination: str,
+        ok_to_erase: bool = False,
+        ask_confirm: bool = True,
+        coding: str = coding_default,
+        ):
+        """ Pour sauvegarder une ou des chaînes de
+        caractères dans un fichier.
+
+        :param *args: la suite de strings à stocker.
+
+        :param destination: nom du fichier à créer.
+        S'il existe déjà, un nouveau nom de fichier
+        sera bâti à partir de destination, sauf si
+        ok_to_erase ci-dessous est à True.
+
+        :param ok_to_erase: True si l'on veut que le
+        fichier soit écrasé s'il existe déjà.
+
+        :param ask_confirm: True si l'on veut qu'une
+        confirmation soit demandée avant d'écraser le
+        fichier.
+
+        :param coding: quel est le jeu de caractères
+        du fichier à créer ? Cela nous permet surtout
+        de savoir s'il faut créer un fichier « byte »
+        ou un fichier texte...
+
+            !!! ATTENTION !!!
+            D'après la CONVENTION adoptée dans ce script,
+            None ou coding_bytes indique un encodage en
+            « byte strings ».
+        """
+
+        new_name = os.path.exists(destination)
+
+        if new_name:
+
+            new_name = not ok_to_erase
+            
+            if ok_to_erase and ask_confirm:
+
+                msg = \
+                    'ATTENTION : on va écraser « ' \
+                    + destination \
+                    + ' » !!!'
+
+                new_name = self.ask_yes_or_no(msg, 'n')
+
+        if new_name:
+
+            # On créé un nouveau nom de fichier si celui
+            # qui nous a été donné ne peut être utilisé.
+            #
+            name, ext = os.path.splitext(destination)
+            tmp_dst = name + " { new version }" + ext
+            file_dst = self.get_unused_filename(tmp_dst)
+
+        else:
+
+            # On peut se servir tel quel du nom de fichier
+            # qui nous a été fourni.
+            #
+            file_dst = destination
+
+        if coding is None:
+
+            # Le jeu de caractères qui nous concerne est
+            # celui des « byte strings ». Donc on ouvre
+            # notre fichier au format « b(yte) ».
+            #
+            flag = "wb"
+
+        else:
+
+            # On ouvre notre fichier au format « t(ext) ».
+            #
+            flag = "wt"
+
+        with open(file_dst, flag) as new_file:
+
+            for content in args:
+
+                new_file.write(content)
 
 
 # ---------------------------------------------------------------------------
