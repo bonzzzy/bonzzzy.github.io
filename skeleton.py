@@ -2767,21 +2767,29 @@ class ScriptSkeleton:
                 )
 
         except InvalidURL as error:
-            _show_('===>> InvalidURL = ' + error, log)
+            _show_('===>> InvalidURL = ' \
+                + str(error),
+                log
+                )
             _show_('', log)
 
         except NotConnected as error:
-            _show_('===>> NotConnected = ' + error, log)
+            _show_('===>> NotConnected = ' \
+                + str(error),
+                log
+                )
             _show_('', log)
 
         except TimeoutError:
-            _show_('===>> Request timed out...', log)
+            _show_('===>> Request timed out...',
+                log)
             _show_('', log)
 
         except HTTPError as error:
-            _show_(
-                '===>> ' + error.status \
-                + ' ERROR = ' + error.reason,
+            _show_('===>> HTTP ' \
+                + str(error.status) \
+                + ' ERROR = ' \
+                + str(error.reason),
                 log
                 )
             _show_('', log)
@@ -2789,49 +2797,54 @@ class ScriptSkeleton:
         except URLError as error:
 
             if isinstance(error.reason, timeout):
-                _show_('===>> Socket timeout error...', log)
+                _show_('===>> Socket timeout error...',
+                    log
+                    )
 
             else:
-                _show_('===>> URLError = ' + error.reason, log)
+                _show_('===>> URLError = ' \
+                    + str(error.reason),
+                    log
+                    )
 
             _show_('', log)
 
         else:
             html_bytes = response.read()
 
-        _warn_(html_bytes)
-        _warn_('')
+            _warn_(html_bytes)
+            _warn_('')
 
-        if set_of_chars == coding_unknown:
+            if set_of_chars == coding_unknown:
 
-            # headers.get_content_charset() sait lire les
-            # fichiers au format HTML.
-            #
-            # Le "character encoding" n'est normalement pas
-            # spécifié dans le fichier .py, pas en tout cas
-            # à la façon d'un fichier HTML normal !!!
-            #
-            # Donc get_content_charset() ne devrait pas le
-            # lire correctement si c'est un fichier script
-            # Python, bash ou autres.
-            #
-            # Dans le cas où get_content_charset() ne peut
-            # donner de réponse, il renverra « None ».
-            #
-            set_of_chars = response.headers.get_content_charset()
+                # headers.get_content_charset() sait lire les
+                # fichiers au format HTML.
+                #
+                # Le "character encoding" n'est normalement pas
+                # spécifié dans le fichier .py, pas en tout cas
+                # à la façon d'un fichier HTML normal !!!
+                #
+                # Donc get_content_charset() ne devrait pas le
+                # lire correctement si c'est un fichier script
+                # Python, bash ou autres.
+                #
+                # Dans le cas où get_content_charset() ne peut
+                # donner de réponse, il renverra « None ».
+                #
+                set_of_chars = response.headers.get_content_charset()
 
-        if set_of_chars is None:
+            if set_of_chars is None:
 
-            # Aucun décodage à faire car le jeu de caractères
-            # qui nous concerne est celui des « byte strings ».
-            #
-            html_string = html_bytes
+                # Aucun décodage à faire car le jeu de caractères
+                # qui nous concerne est celui des « byte strings ».
+                #
+                html_string = html_bytes
 
-        else:
-            html_string = html_bytes.decode(set_of_chars)
+            else:
+                html_string = html_bytes.decode(set_of_chars)
 
-        _warn_(html_string)
-        _warn_('')
+            _warn_(html_string)
+            _warn_('')
 
         return html_string
 
