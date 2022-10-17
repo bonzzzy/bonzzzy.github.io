@@ -19,12 +19,21 @@ ___debug___ = True
 
 import os
 import sys
+
 import time
 import datetime
+
 import tempfile
 import subprocess
+
 import logging
 import logging.handlers
+
+import urllib.request
+
+from urllib.error import HTTPError, URLError
+from http.client import InvalidURL, NotConnected
+from socket import timeout
 
 
 # ===========================================================================
@@ -45,6 +54,8 @@ import logging.handlers
 #   - Fonctions de SAISIE de DONNÉES
 #
 #   - Fonctions de GESTION de FICHIERS
+#
+#   - Fonctions spécifiques au WEB ( browser, HTML, HTTP, etc )
 #
 # ===========================================================================
 #
@@ -88,6 +99,12 @@ import logging.handlers
 #                       . def edit_file_txt
 #   ( in autotests )    . def compare_files
 #   ( in autotests )    . def get_unused_filename
+
+# ===========================================================================
+#
+#   - Fonctions spécifiques au WEB ( browser, HTML, HTTP, etc ) :
+#                       . def url_to_valid
+#                       . def send_request_http
 #
 # ===========================================================================
 
@@ -130,6 +147,73 @@ yes_or_no = {
         'n'     : False,
         'non'   : False
         }
+}
+
+
+# Le dictionnaire ci-dessous permet d'associer le type
+# de fichier avec le jeu de charactères qu'il contient.
+#
+# CONVENTION : Lorsque le fichier est codé sous forme
+# de « bytes » ( codage sous forme octale ), on code
+# ceci par « None ».
+#
+# ATTENTION : Il serait possible de mettre « None »
+# pour toutes les valeurs puisque :
+#
+#       . urllib.request.urlopen("...").read() renvoie
+# une chaîne de caractères au format « bytes ».
+#
+#       . en mode "wb", écrire dans un fichier demande
+# une chaîne au format b"...", ie au format « bytes ».
+#
+# Ainsi, indiquer qu'il faut traiter tous les types de
+# fichiers au format « bytes » ( « None » ), revient à
+# éviter le cycle intermédiaire de décodage des chaînes
+# au format « bytes ».
+#
+# REMARQUE : Sous Unix, pour avoir une idée du jeu de
+# caractères d'1 fichier, on utilise la cmd « file » :
+#
+#       $ file file1.txt file2.txt
+#       file1.txt:    ASCII English text
+#       file2.txt:    UTF-8 Unicode text
+#
+# ... Ceci dit, ce n'est pas toujours exact puisque,
+# avec a-Shell sous iPad, en écrivant :
+#
+#       file import_via_github.sh
+#
+# .. on obtient en résultat :
+#
+#       import_via_github.sh: POSIX shell script, ASCII text executable
+#
+# .. alors que :
+#
+#       . si on associe, dans filetype_to_coding, '.sh'
+# à 'ASCII', ce script plante pour import_via_github.sh
+# ( donc ce .sh n'est pas codé en 'ASCII'...).
+#
+#       . « Bash stores strings as byte strings ».
+# Cf https://unix.stackexchange.com/questions/250366/how-to-force-shell-script-characters-encoding-from-within-the-script
+#
+coding_unknown = '?'
+coding_default = 'UTF-8'
+
+# ATTENTION : Ce script s'attend à ce que « None »
+# soit la valeur de l'encodage en « byte strings ».
+#
+# Des tests type « if ... is None » sont ainsi codés
+# dans ce script !!!
+#
+# La valeur ci-dessous ne doit donc pas être modifiée
+# et est ici donnée simplement pour mémoire !!!
+#
+coding_bytes = None
+
+filetype_to_coding = {
+    '.bat': 'ASCII',
+    '.py': 'UTF-8',
+    '.sh': coding_bytes
 }
 
 
@@ -1105,14 +1189,14 @@ class ScriptSkeleton:
                 # LOG, afin qu'il puisse être examiné.
                 #
                 _warn_('PS: Je ne détruis pas le LOG')
-                _warn_()
+                _warn_('')
 
                 # Nous sommes sous IDLE donc nous affichons
                 # seulement un message avant de rendre la
                 # main à cette console.
                 #
                 _warn_('... et je rends la main à IDLE.')
-                _warn_()
+                _warn_('')
 
                 # Sous IDLE, l'instruction « exit() » ci-
                 # dessous aurait aussi tué IDLE... !!!
@@ -1689,7 +1773,7 @@ class ScriptSkeleton:
             # et ceci au cas où la LISTE SERAIT TROP LONGUE. Reste à trouver comment...
             #
             for index, an_answer in enumerate(list_of_choices, start=0):
-                _show_(str(index).rjust(3) + ' -   ' + an_answer, log)
+                _show_(str(index).rjust(3) + ' - ' + an_answer, log)
             _show_('', log)
 
             # On demande son choix à l'utilisateur, i-e le n° de la réponse dans la
@@ -2619,6 +2703,141 @@ class ScriptSkeleton:
 
 # ---------------------------------------------------------------------------
 #
+#   PARTIE :
+#   ~~~~~~~~
+#   Fonctions spécifiques au WEB ( browser, HTML, HTTP, etc ).
+#
+# ---------------------------------------------------------------------------
+
+
+    def url_to_valid(
+        self,
+        url: str
+        ) -> str:
+        """ S'assure qu'une URL soit valide, i.e
+        ne comporte pas de caractères interdits,
+        et renvoie si nécessaire l'URL adéquate,
+        ou l'URL inchangée si elle était déjà
+        valide.
+
+        Cf par exemple le message d'erreur suivant
+        si l'URL contient un espace :
+
+            InvalidURL = URL can't contain control characters. '/my Check-Lists.py' (found at least ' ')
+
+        :return: une URL valide.
+        """
+
+        valid_url = url
+
+        if ' ' in url:
+            valid_url = valid_url.replace(
+                ' ',
+                '%20'
+                )
+
+        return valid_url
+
+
+    def send_request_http(
+        self,
+        url: str,
+        set_of_chars: str = coding_unknown
+        ) -> str:
+        """ Pour envoyer une requête HTTP et en recevoir le résultat.
+
+        :param url: la requête à lancer.
+
+        :param set_of_chars: l'encodage attendu de la réponse.
+
+        :return: la réponse au format souhaité.
+        """
+
+        log = self.logItem
+        html_string = ''
+
+        url_valid = self.url_to_valid(url)
+        _show_('URL ok = ' + url_valid, log)
+        _show_('', log)
+
+        try:
+            response = urllib.request.urlopen(
+                url_valid,
+                timeout = 3
+                )
+
+        except InvalidURL as error:
+            _show_('===>> InvalidURL = ' + error, log)
+            _show_('', log)
+
+        except NotConnected as error:
+            _show_('===>> NotConnected = ' + error, log)
+            _show_('', log)
+
+        except TimeoutError:
+            _show_('===>> Request timed out...', log)
+            _show_('', log)
+
+        except HTTPError as error:
+            _show_(
+                '===>> ' + error.status \
+                + ' ERROR = ' + error.reason,
+                log
+                )
+            _show_('', log)
+
+        except URLError as error:
+
+            if isinstance(error.reason, timeout):
+                _show_('===>> Socket timeout error...', log)
+
+            else:
+                _show_('===>> URLError = ' + error.reason, log)
+
+            _show_('', log)
+
+        else:
+            html_bytes = response.read()
+
+        _warn_(html_bytes)
+        _warn_('')
+
+        if set_of_chars == coding_unknown:
+
+            # headers.get_content_charset() sait lire les
+            # fichiers au format HTML.
+            #
+            # Le "character encoding" n'est normalement pas
+            # spécifié dans le fichier .py, pas en tout cas
+            # à la façon d'un fichier HTML normal !!!
+            #
+            # Donc get_content_charset() ne devrait pas le
+            # lire correctement si c'est un fichier script
+            # Python, bash ou autres.
+            #
+            # Dans le cas où get_content_charset() ne peut
+            # donner de réponse, il renverra « None ».
+            #
+            set_of_chars = response.headers.get_content_charset()
+
+        if set_of_chars is None:
+
+            # Aucun décodage à faire car le jeu de caractères
+            # qui nous concerne est celui des « byte strings ».
+            #
+            html_string = html_bytes
+
+        else:
+            html_string = html_bytes.decode(set_of_chars)
+
+        _warn_(html_string)
+        _warn_('')
+
+        return html_string
+
+
+# ---------------------------------------------------------------------------
+#
 #   Programme PRINCIPAL de ce module s'il est lancé en mode autonome...
 #
 # ---------------------------------------------------------------------------
@@ -2730,7 +2949,7 @@ if __name__ == "__main__":
         _show_('Fichier(s) trouvé(s) [ *.py ] :', log)
         _show_('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~', log)
 
-        for file_name in files_found:
+        for file_name in sorted(files_found):
             _show_('\t' + file_name, log)
 
         _show_('', log)
