@@ -51,6 +51,8 @@ import logging.handlers
 #   - Fonctions d'initialisation des EXÉCUTABLES et RÉPERTOIRES utilisés :
 #   ( in autotests )    . def set_paths_and_miscellaneous
 #                       . def get_paths_and_miscellaneous
+#                       . def show_paths_and_miscellaneous
+#                       . def check_paths_and_miscellaneous
 #
 # ===========================================================================
 #
@@ -98,6 +100,7 @@ import logging.handlers
 #
 # ---------------------------------------------------------------------------
 
+
 # Types de SHUTDOWN possibles.
 #
 # Mais ils ne sont utilisés que dans les scripts PYTHON destinés à servir en
@@ -110,6 +113,8 @@ shutdown_complete = 'complete'
 shutdown_hibernate = 'hibernate'
 
 
+# Les multiples façons de dire OUI ou NON.
+#
 yes_or_no = {
     'eng'   : {
         'y'     : True,
@@ -128,15 +133,9 @@ yes_or_no = {
 }
 
 
-def _debug_(msg):
-    """ Pour n'afficher certains messages qu'en mode DEBUG.
-    """
-
-    if ___debug___:
-        print(msg)
-
-
-def _print_(msg, journal):
+# Fonctions d'affichages.
+#
+def _show_(msg, journal):
     """ Pour afficher un msg, tout en le journalisant en
     même temps.
     """
@@ -145,6 +144,16 @@ def _print_(msg, journal):
     print(msg)
 
 
+def _warn_(msg):
+    """ Pour n'afficher certains messages qu'en mode DEBUG.
+    """
+
+    if ___debug___:
+        print(msg)
+
+
+# Notre classe principale ScriptSkeleton.
+#
 class ScriptSkeleton:
     """ Squelette d'un script Python, avec différentes
     propriétés et méthodes pour faciliter les traitements
@@ -160,9 +169,9 @@ class ScriptSkeleton:
         """
         """
 
-        _debug_('')
-        _debug_(33 * '#' + ' Mode DEBUG ' + 33 * '#')
-        _debug_('')
+        _warn_('')
+        _warn_(33 * '#' + ' Mode DEBUG ' + 33 * '#')
+        _warn_('')
 
         # Sommes-nous dans notre méthode __del__ ?
         #
@@ -255,6 +264,115 @@ class ScriptSkeleton:
 #   Fonctions d'initialisation des EXÉCUTABLES et RÉPERTOIRES utilisés.
 #
 # ---------------------------------------------------------------------------
+
+    
+    def show_paths_and_miscellaneous(
+        self,
+        printer, # function
+        jumper, # function
+        intro: str = None
+        ):
+        """ Pour "imprimer" ou sauvegarder le contenu de
+        notre dictionnaire.
+
+        :param printer: la fonction qui doit permettre de
+        sauvegarder ou imprimer ce résumé là où l'on veut
+        ( un fichier log, un widget, ...).
+
+        :param jumper: la fonction qui permet de "sauter
+        une ligne" afin d'améliorer la présentation.
+
+        :param sous_titre: un message que l'on souhaite
+        éventuellement afficher en introduction.
+
+        :return: None
+        """
+
+        printer('Configuration des exécutables & répertoires :')
+        printer('=============================================')
+        jumper()
+
+        if intro is not None:
+            printer(intro)
+            jumper()
+
+        for key, value in self.paths_and_miscellaneous.items():
+            printer(str(key) + ' = ' + str(value))
+
+        jumper()
+
+
+    def check_paths_and_miscellaneous(
+        self,
+        printer, # function
+        jumper, # function
+        alert # function
+        ) -> bool:
+        """ Pour vérifier que notre dictionnaire est correct.
+
+        On va tester le contenu des clefs commençant par :
+
+            . 'DIR_',
+            . 'EXE_',
+            . 'DLL_'.
+
+        On teste l'existence des répertoires & fichiers définis,
+        autres que ceux relatifs au répertoire de travail ( car
+        on est sûr que ces derniers existent puisqu'ils ont été
+        construits à partir de la fonction os.getcwd() ou que l'
+        on a déjà vérifié leur existence.
+
+        :param printer: la fonction qui doit permettre de sauver
+        ou imprimer les messages relatifs à nos traitements là où
+        l'on veut ( un fichier log, un widget, ...).
+
+        :param jumper: la fonction qui permet de "sauter 1 ligne"
+        afin d'améliorer la présentation.
+
+        :param alert: la fonction qui nous permet d'alerter si ns
+        trouvons un pb.
+
+        :return: True si les tests ok ; False si on a rencontré
+        une erreur .
+        """
+
+        no_error = True
+
+        for key, value in self.paths_and_miscellaneous.items():
+
+            if value is None:
+                pass
+
+            else:
+                name = None
+                key_short = key[0:4]
+
+                if key_short in ('DIR_', 'EXE_', 'DLL_'):
+
+                    printer(
+                        "Test de l'existence de " + str(key) + '...'
+                        )
+
+                if key_short == 'DIR_' and not os.path.isdir(value):
+                    name = 'répertoire'
+
+                elif key_short == 'EXE_' and not os.path.isfile(value):
+                    name = 'fichier'
+
+                elif key_short == 'DLL_' and not os.path.isfile(value):
+                    name = 'module DLL'
+
+                if name is not None:
+
+                    no_error = False
+
+                    alert('Le ' + name + " suivant n'existe pas :")
+                    alert(' ' * 6 + str(value))
+
+                    jumper()
+
+        return no_error
+
 
     def set_paths_and_miscellaneous(
         self,
@@ -539,68 +657,37 @@ class ScriptSkeleton:
         self.paths_and_miscellaneous['ARG_player'] = player_arg
         self.paths_and_miscellaneous['EXE_played'] = played
 
+        # Si c'est demandé, on imprime le dictionnaire.
+        #
+        printing_function = lambda x: log.debug(x)
+        jumping_function = lambda: log.debug('')
+        alert_function = lambda x: log.critical(x)
+
         if print_configuration:
 
-            # Si c'est demandé, on imprime le dictionnaire.
-            #
-            log.debug('')
-            log.debug('Configuration des exécutables & répertoires :')
-            log.debug('=============================================')
-            log.debug('')
-            log.debug(msg_architecture)
-            log.debug('')
-            for key, value in self.paths_and_miscellaneous.items():
-                log.debug('%s = %s', key, str(value))
-            log.debug('')
+            jumping_function()
 
-        # On teste l'existence des répertoires & fichiers définis,
-        # autres que ceux relatifs au répertoire de travail ( car
-        # on est sûr que ces derniers existent puisqu'ils sont
-        # construits à partir de la fonction os.getcwd() ou que l'
-        # a déjà vérifié leur existence ).
+            self.show_paths_and_miscellaneous(
+                printing_function,
+                jumping_function,
+                msg_architecture
+                )
+
+        # On vérifie que notre dictionnaire soit correct.
         #
-        all_found = True
+        all_ok = self.check_paths_and_miscellaneous(
+            printing_function,
+            jumping_function,
+            alert_function
+            )
 
-        for key, value in self.paths_and_miscellaneous.items():
-
-            if value is not None:
-
-                msg_1 = ''
-                key_short = key[0:4]
-
-                if key_short in ('DIR_', 'EXE_', 'DLL_'):
-                    log.debug("Test de l'existence de %s...", key)
-
-                if key_short == 'DIR_' and not os.path.isdir(value):
-                    msg_1 = 'répertoire'
-                    msg_2 = value
-                    break
-
-                elif key_short == 'EXE_' and not os.path.isfile(value):
-                    msg_1 = 'fichier'
-                    msg_2 = value
-                    break
-
-                elif key_short == 'DLL_' and not os.path.isfile(value):
-                    msg_1 = 'module DLL'
-                    msg_2 = value
-                    break
-
-                if msg_1 != '':
-                    all_found = False
-                    log.critical("Le %s suivant n'existe pas :", msg_1)
-                    log.critical('      %s', msg_2)
-                    log.critical('')
-
-                    # Dorénavant, on ne lève plus d'exception, le script
-                    # se poursuit et testera lorsque besoin si une valeur
-                    # est à None ou pas...
-                    #
-                    # raise AssertionError
-
-        if all_found:
+        if all_ok:
             log.debug('-> Ok, présence de tous les fichiers & répertoires.')
-            log.debug('')
+            jumping_function()
+
+        else:
+            log.critical('-> Certains FICHIERS requis sont MANQUANTS.')
+            log.critical('')
 
         return working_path
 
@@ -907,7 +994,7 @@ class ScriptSkeleton:
             # du module n’a pas appeler on_dit_aurevoir(), comme
             # il le devrait...
             #
-            _debug_('Nous avons déjà dit au revoir...')
+            _warn_('Nous avons déjà dit au revoir...')
 
         else:
 
@@ -937,7 +1024,7 @@ class ScriptSkeleton:
             if self._we_are_inside_del_method:
 
                 shw_info = lambda x: print(x)
-                shw_debug = lambda x: _debug_(x)
+                shw_debug = lambda x: _warn_(x)
 
             else:
 
@@ -1017,15 +1104,20 @@ class ScriptSkeleton:
                 # donc nous laissons quoi qu'il arrive le
                 # LOG, afin qu'il puisse être examiné.
                 #
-                _debug_('PS: Je ne détruis pas le LOG')
-                _debug_()
+                _warn_('PS: Je ne détruis pas le LOG')
+                _warn_()
 
                 # Nous sommes sous IDLE donc nous affichons
                 # seulement un message avant de rendre la
                 # main à cette console.
                 #
-                _debug_('... et je rends la main à IDLE.')
-                _debug_()
+                _warn_('... et je rends la main à IDLE.')
+                _warn_()
+
+                # Sous IDLE, l'instruction « exit() » ci-
+                # dessous aurait aussi tué IDLE... !!!
+                #
+                # exit()
 
             else:
     
@@ -1040,8 +1132,8 @@ class ScriptSkeleton:
                     self._logFile
                     ):
 
-                    _debug_('Destruction du LOG.')
-                    _debug_('')
+                    _warn_('Destruction du LOG.')
+                    _warn_('')
 
                 # Nous ne sommes pas sous IDLE, donc nous
                 # marquons une pause afin que la fenêtre
@@ -1060,27 +1152,20 @@ class ScriptSkeleton:
 
                     os.remove(self._logFile)
 
-                _debug_('FIN DU SCRIPT')
-                _debug_('')
+                _warn_('FIN DU SCRIPT')
+                _warn_('')
 
                 if self._we_are_inside_del_method:
 
-                    _debug_('Nous nous AUTO-DÉTRUISONS ( __del__ ).')
-                    _debug_('... Nous ne lançons pas exit(), sinon ça bug !')
-                    _debug_('... Cela dit, le mieux est de ne RIEN lancer !')
-                    _debug_('')
+                    _warn_('Nous nous AUTO-DÉTRUISONS ( __del__ ).')
+                    _warn_('Pas de « exit() » lancé : sinon cela bug !')
+                    _warn_('')
 
-                else:
-
-                    _debug_("Ciel ! On m'a tué...")
-                    _debug_('')
-
-                    # Si nous ne sommes pas dans la méthode
-                    # __del__, nous pouvons lancer le exit() 
-                    # de fin.
+                    # Nous sommes dans la méthode __del__, nous
+                    # ne pouvons lancer le « exit() » de fin.
                     #
-                    # En fait, si on l'insérait dans __del__,
-                    # Python afficherait les msgs suivants :
+                    # En effet, si on l'exécute dans __del__,
+                    # Python affiche les msgs suivants :
                     #
                     #       FIN DU SCRIPT
                     #
@@ -1090,7 +1175,8 @@ class ScriptSkeleton:
                     #         File "C:\Program Files\make_movie\skeleton.py", line 729, in on_dit_au_revoir
                     #       NameError: name 'exit' is not defined
                     #
-                    # ... ou ( ? ) :
+                    # ... ou ( dans je ne sais plus quelle autre
+                    # configuration ) :
                     #
                     #       FIN DU SCRIPT
                     #
@@ -1101,16 +1187,20 @@ class ScriptSkeleton:
                     #         File "C:\Program Files\Python310\lib\_sitebuiltins.py", line 26, in __call__
                     #       SystemExit: None
                     #
-                    # Par ailleurs, si nous étions sous IDLE,
-                    # cet exit() aurait aussi fermé IDLE !!!
-                    #
-                    pass
                     # exit()
 
-                    # Ceci étant dit, le mieux est probablement
-                    # de ne rien lancer du tout !!! Et donc de
-                    # laisser ci-dessus le « pass » au lieu du
-                    # « exit() ».
+                else:
+
+                    _warn_("Ciel ! On m'a tué...")
+                    _warn_('')
+
+                    # Finalement, ici aussi nous n'exécutons plus
+                    # l'instruction « exit() » ci-dessous...
+                    #
+                    # exit()
+
+                    # Le mieux est probablement de ne pas lancer
+                    # du tout « exit() » !!!
                     #
                     # En effet, cf :
                     #
@@ -1143,18 +1233,12 @@ class ScriptSkeleton:
                     #       SystemExit:
                     #
                     # DONC, FINALEMENT, DANS CETTE BRANCHE, ON
-                    # NE FAIT PLUS RIEN !!!
+                    # NE FAIT PLUS RIEN ( à part des msgs ) !!!
                     #
                     # On pourrait même virer tout le code de
-                    # cette fonction à partir de :
+                    # cette fonction à partir du dernier :
                     #
                     #       if self._we_are_inside_del_method:
-                    #
-                    # ... et donc également virer tout ce qui,
-                    # dans notre classe ScriptSkeleton, a un
-                    # rapport avec la propriété :
-                    #
-                    #       « _we_are_inside_del_method ».
                     #
                     # J'ai toutefois gardé tout ce code et ces
                     # infos ( commentaires ) pour me souvenir
@@ -1331,8 +1415,8 @@ class ScriptSkeleton:
                     log.debug("... on va dormir AVANT la demande d'hibernation.")
                     log.debug('')
 
-                    print("J'attends...")
-                    print("")
+                    _show_("J'attends...", log)
+                    _show_('', log)
 
                     try:
                         time.sleep(delai_9mn33_en_secondes)
@@ -1469,6 +1553,8 @@ class ScriptSkeleton:
         :return: YES ( True ) or FALSE ( No ).
         """
 
+        log = self.logItem
+
         if play_sound:
             self.on_sonne_le_reveil()
 
@@ -1477,8 +1563,8 @@ class ScriptSkeleton:
 
         else:
             our_yes_or_no = yes_or_no['eng']
-            print('Unknown language... Using english...')
-            print()
+            _show_('Unknown language... Using english...', log)
+            _show_('', log)
 
         if default is not None:
             default = default.strip(' \t')
@@ -1527,8 +1613,8 @@ class ScriptSkeleton:
                     raise ValueError('Too much retry...')
 
                 elif dflt_valid:
-                    print('Too much retry... Using default !')
-                    print()
+                    _show_('Too much retry... Using default !', log)
+                    _show_('', log)
                     return our_yes_or_no[default]
 
                 else:
@@ -1536,10 +1622,10 @@ class ScriptSkeleton:
                         'Too much retry... And no default value !'
                         )
 
-            print(reminder)
-            print('OK =', our_yes)
-            print('NO =', our_no)
-            print()
+            _show_(reminder, log)
+            _show_('OK = ' + str(our_yes), log)
+            _show_('NO = ' + str(our_no), log)
+            _show_('', log)
 
 
     def choose_in_a_list(
@@ -1596,15 +1682,15 @@ class ScriptSkeleton:
         # choix.
         #
         else:
-            print('Veuillez choisir parmis les réponses suivantes :')
-            print()
+            _show_('Veuillez choisir parmis les réponses suivantes :', log)
+            _show_('', log)
 
             # // TODO : Il serait bon ici de limiter le nombre de réponses affichées
             # et ceci au cas où la LISTE SERAIT TROP LONGUE. Reste à trouver comment...
             #
             for index, an_answer in enumerate(list_of_choices, start=0):
-                print(str(index).rjust(3), '-  ', an_answer)
-            print()
+                _show_(str(index).rjust(3) + ' -   ' + an_answer, log)
+            _show_('', log)
 
             # On demande son choix à l'utilisateur, i-e le n° de la réponse dans la
             # liste affichée.
@@ -1705,15 +1791,22 @@ class ScriptSkeleton:
         # choix.
         #
         else:
-            print('Veuillez choisir parmis les réponses suivantes :')
-            print()
+            _show_('Veuillez choisir parmis les réponses suivantes :', log)
+            _show_('', log)
 
             # // TODO : Il serait bon ici de limiter le nombre de réponses affichées
             # et ceci au cas où la LISTE SERAIT TROP LONGUE. Reste à trouver comment...
             #
             for idx, item in enumerate(sorted(dict_of_choices.items()), start=0):
-                print(str(idx).rjust(3), '- ', str(item[0]).rjust(6), '= ', item[1])
-            print()
+                _show_(
+                    str(idx).rjust(3) \
+                    + ' - ' \
+                    + str(item[0]).rjust(6) \
+                    + ' = ' \
+                    + item[1],
+                    log
+                    )
+            _show_('', log)
 
             # On demande son choix à l'utilisateur, i-e le n° de la réponse dans la
             # liste affichée.
@@ -2107,15 +2200,19 @@ class ScriptSkeleton:
         return found_files
 
 
-    def convert_to_pdf_init(self):
+    def convert_to_pdf_init(
+        self
+        ) -> bool:
         """ Conversion de fichier(s) DOCX ( ou ODT, TXT, etc )
         en fichier(s) PDF :
 
                 PHASE D'INITIALISATION
 
+        :return: opération réussie ou non.
         """
 
         log = self.logItem
+        no_error = True
 
         # Pour convertir en PDF, on va faire appel à LibreOffice.
         # En effet, le format PDF est complexe à gérer !!!
@@ -2141,7 +2238,8 @@ class ScriptSkeleton:
             )
 
         if libre_office_exec is None:
-            pass
+            no_error = False
+
         else:
 
             log.debug('... i-e lancement de : « %s »', libre_office_exec)
@@ -2185,12 +2283,14 @@ class ScriptSkeleton:
             log.debug('Code Retour : « %s ».', process.returncode)
             log.debug('')
 
+        return no_error
+
 
     def convert_to_pdf_run(
         self,
         wait: bool = True,
         *args
-        ):
+        ) -> bool:
         """ Conversion de fichier(s) DOCX ( ou ODT, TXT, etc )
         en fichier(s) PDF :
 
@@ -2200,9 +2300,12 @@ class ScriptSkeleton:
         rendre la main à la fonction appelante ? ou pas...
 
         :param *args: tuple des fichiers à convertir.
+
+        :return: opération réussie ou non.
         """
 
         log = self.logItem
+        no_error = True
 
         # On demande à LibreOffice de convertir nos fichiers
         # en PDF.
@@ -2226,7 +2329,8 @@ class ScriptSkeleton:
             )
 
         if libre_office_exec is None:
-            pass
+            no_error = False
+
         else:
 
             for file_in in args:
@@ -2287,6 +2391,8 @@ class ScriptSkeleton:
                 log.debug('')
                 log.debug('Code Retour : « %s ».', process.returncode)
                 log.debug('')
+
+        return no_error
 
 
     def edit_file_txt(
@@ -2526,7 +2632,7 @@ if __name__ == "__main__":
     # Les fichiers d'auto-test auront
     # un nom qui débute par :
     #
-    it_begins_with = 'zzz_skeleton'
+    it_begins_with = '#_TESTS_( skeleton )'
 
 
     # On affiche un peu de bla-bla.
@@ -2554,6 +2660,7 @@ if __name__ == "__main__":
         # On appelle choose_in_a_list() pour vérifier
         # que Python ne plante pas en le parcourant.
         #
+        log.info('')
         log.info('\t==================================')
         log.info('\t>>> TEST de choose_in_a_list() <<<')
         log.info('\t==================================')
@@ -2564,13 +2671,14 @@ if __name__ == "__main__":
         idx = my_skeleton.choose_in_a_list(fruits, 1)
 
         if idx >= 0:
-            _print_('Votre réponse = ' + fruits[idx], log)
+            _show_('Votre réponse = ' + fruits[idx], log)
 
-        log.info('')
+        _show_('', log)
 
         # On appelle choose_in_a_dict() pour vérifier
         # que Python ne plante pas en le parcourant.
         #
+        log.info('')
         log.info('\t==================================')
         log.info('\t>>> TEST de choose_in_a_dict() <<<')
         log.info('\t==================================')
@@ -2585,9 +2693,9 @@ if __name__ == "__main__":
         key = my_skeleton.choose_in_a_dict(capitals, 'India')
 
         if key is not None:
-            _print_('Votre réponse = ' + capitals[key], log)
+            _show_('Votre réponse = ' + capitals[key], log)
 
-        log.info('')
+        _show_('', log)
 
 
     # #######################################################################
@@ -2606,18 +2714,26 @@ if __name__ == "__main__":
         # On appelle search_files_from_a_mask() pour vérifier
         # que Python ne plante pas en le parcourant.
         #
+        log.info('')
         log.info('\t==========================================')
         log.info('\t>>> TEST de search_files_from_a_mask() <<<')
         log.info('\t==========================================')
         log.info('')
         log.info('')
 
-        files_found = my_skeleton.search_files_from_a_mask()
+        files_found = my_skeleton.search_files_from_a_mask(
+            mask = '*.py'
+            )
+
+        log.debug('')
+
+        _show_('Fichier(s) trouvé(s) [ *.py ] :', log)
+        _show_('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~', log)
 
         for file_name in files_found:
-            print('\t' + file_name)
+            _show_('\t' + file_name, log)
 
-        log.info('')
+        _show_('', log)
 
 
     # #######################################################################
@@ -2636,72 +2752,78 @@ if __name__ == "__main__":
         # On appelle les fonctions convert_to_pdf_*() pour
         # vérifier que Python ne plante pas en leur sein.
         #
+        log.info('')
         log.info('\t==================================')
         log.info('\t>>> TEST de convert_to_pdf_*() <<<')
         log.info('\t==================================')
         log.info('')
         log.info('')
 
-        my_skeleton.convert_to_pdf_init()
+        if my_skeleton.convert_to_pdf_init():
 
-        f_name = (
-            it_begins_with
-            + ' - '
-            + my_skeleton.build_now_string()
-            + '.txt'
-            )
+            f_name = (
+                it_begins_with
+                + ' - '
+                + my_skeleton.build_now_string()
+                + '.txt'
+                )
 
-        with open(f_name, "wt") as f_test:
+            with open(f_name, "wt") as f_test:
 
-            f_test.write(
-                '#\n'
-                '# =================\n'
-                "# FICHIER DE TEST :\n"
-                '# =================\n'
-                '#\n'
-                '# Bonjour, je suis un fichier totalement inutile.\n'
-                "# J'ai vocation à être détruit après ma création.\n"
-                '#\n'
-                '\n'
-                'Lorem ipsum (également appelé faux-texte, lipsum, ou bolo bolo)\n'
-                'https://fr.wikipedia.org/wiki/Lorem_ipsum\n'
-                '\n'
-                "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed non risus.\n"
-                "Suspendisse lectus tortor, dignissim sit amet, adipiscing nec, ultricies\n"
-                "sed, dolor. Cras elementum ultrices diam. Maecenas ligula massa, varius a,\n"
-                "semper congue, euismod non, mi. Proin porttitor, orci nec nonummy molestie,\n"
-                "enim est eleifend mi, non fermentum diam nisl sit amet erat. Duis semper.\n"
-                "Duis arcu massa, scelerisque vitae, consequat in, pretium a, enim. Pellentesque\n"
-                "congue. Ut in risus volutpat libero pharetra tempor. Cras vestibulum bibendum\n"
-                "augue. Praesent egestas leo in pede. Praesent blandit odio eu enim. Pellentesque\n"
-                "sed dui ut augue blandit sodales. Vestibulum ante ipsum primis in faucibus orci\n"
-                "luctus et ultrices posuere cubilia Curae; Aliquam nibh. Mauris ac mauris sed\n"
-                "pede pellentesque fermentum. Maecenas adipiscing ante non diam sodales hendrerit.\n"
-                '\n'
-                "Ut velit mauris, egestas sed, gravida nec, ornare ut, mi. Aenean ut orci vel\n"
-                "massa suscipit pulvinar. Nulla sollicitudin. Fusce varius, ligula non tempus\n"
-                "aliquam, nunc turpis ullamcorper nibh, in tempus sapien eros vitae ligula.\n"
-                "Pellentesque rhoncus nunc et augue. Integer id felis. Curabitur aliquet\n"
-                "pellentesque diam. Integer quis metus vitae elit lobortis egestas.\n"
-                '\n'
-                "Lorem ipsum dolor sit amet, consectetuer adipiscing elit. Morbi vel erat non\n"
-                "mauris convallis vehicula. Nulla et sapien. Integer tortor tellus, aliquam\n"
-                "faucibus, convallis id, congue eu, quam. Mauris ullamcorper felis vitae erat.\n"
-                "Proin feugiat, augue non elementum posuere, metus purus iaculis lectus, et\n"
-                "tristique ligula justo vitae magna.\n"
-                '\n'
-                "Aliquam convallis sollicitudin purus. Praesent aliquam, enim at fermentum\n"
-                "mollis, ligula massa adipiscing nisl, ac euismod nibh nisl eu lectus. Fusce\n"
-                "vulputate sem at sapien. Vivamus leo. Aliquam euismod libero eu enim. Nulla\n"
-                "nec felis sed leo placerat imperdiet. Aenean suscipit nulla in justo. Suspendisse\n"
-                "cursus rutrum augue. Nulla tincidunt tincidunt mi. Curabitur iaculis, lorem vel\n"
-                "rhoncus faucibus, felis magna fermentum augue, et ultricies lacus lorem varius\n"
-                "purus. Curabitur eu amet.\n"
-                '\n')
+                f_test.write(
+                    '#\n'
+                    '# =================\n'
+                    "# FICHIER DE TEST :\n"
+                    '# =================\n'
+                    '#\n'
+                    '# Bonjour, je suis un fichier totalement inutile.\n'
+                    "# J'ai vocation à être détruit après ma création.\n"
+                    '#\n'
+                    '\n'
+                    'Lorem ipsum (également appelé faux-texte, lipsum, ou bolo bolo)\n'
+                    'https://fr.wikipedia.org/wiki/Lorem_ipsum\n'
+                    '\n'
+                    "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed non risus.\n"
+                    "Suspendisse lectus tortor, dignissim sit amet, adipiscing nec, ultricies\n"
+                    "sed, dolor. Cras elementum ultrices diam. Maecenas ligula massa, varius a,\n"
+                    "semper congue, euismod non, mi. Proin porttitor, orci nec nonummy molestie,\n"
+                    "enim est eleifend mi, non fermentum diam nisl sit amet erat. Duis semper.\n"
+                    "Duis arcu massa, scelerisque vitae, consequat in, pretium a, enim. Pellentesque\n"
+                    "congue. Ut in risus volutpat libero pharetra tempor. Cras vestibulum bibendum\n"
+                    "augue. Praesent egestas leo in pede. Praesent blandit odio eu enim. Pellentesque\n"
+                    "sed dui ut augue blandit sodales. Vestibulum ante ipsum primis in faucibus orci\n"
+                    "luctus et ultrices posuere cubilia Curae; Aliquam nibh. Mauris ac mauris sed\n"
+                    "pede pellentesque fermentum. Maecenas adipiscing ante non diam sodales hendrerit.\n"
+                    '\n'
+                    "Ut velit mauris, egestas sed, gravida nec, ornare ut, mi. Aenean ut orci vel\n"
+                    "massa suscipit pulvinar. Nulla sollicitudin. Fusce varius, ligula non tempus\n"
+                    "aliquam, nunc turpis ullamcorper nibh, in tempus sapien eros vitae ligula.\n"
+                    "Pellentesque rhoncus nunc et augue. Integer id felis. Curabitur aliquet\n"
+                    "pellentesque diam. Integer quis metus vitae elit lobortis egestas.\n"
+                    '\n'
+                    "Lorem ipsum dolor sit amet, consectetuer adipiscing elit. Morbi vel erat non\n"
+                    "mauris convallis vehicula. Nulla et sapien. Integer tortor tellus, aliquam\n"
+                    "faucibus, convallis id, congue eu, quam. Mauris ullamcorper felis vitae erat.\n"
+                    "Proin feugiat, augue non elementum posuere, metus purus iaculis lectus, et\n"
+                    "tristique ligula justo vitae magna.\n"
+                    '\n'
+                    "Aliquam convallis sollicitudin purus. Praesent aliquam, enim at fermentum\n"
+                    "mollis, ligula massa adipiscing nisl, ac euismod nibh nisl eu lectus. Fusce\n"
+                    "vulputate sem at sapien. Vivamus leo. Aliquam euismod libero eu enim. Nulla\n"
+                    "nec felis sed leo placerat imperdiet. Aenean suscipit nulla in justo. Suspendisse\n"
+                    "cursus rutrum augue. Nulla tincidunt tincidunt mi. Curabitur iaculis, lorem vel\n"
+                    "rhoncus faucibus, felis magna fermentum augue, et ultricies lacus lorem varius\n"
+                    "purus. Curabitur eu amet.\n"
+                    '\n')
 
-        my_skeleton.convert_to_pdf_run(False, f_name)
+            my_skeleton.convert_to_pdf_run(False, f_name)
 
-        log.info('')
+            _show_('Fichier converti : ' + f_name, log)
+
+        else:
+            _show_('Conversion PDF impossible sur ce terminal.', log)
+
+        _show_('', log)
 
 
     # #######################################################################
@@ -2719,6 +2841,7 @@ if __name__ == "__main__":
 
         # On appelle & teste la fonction compare_files().
         #
+        log.info('')
         log.info('\t=======================================')
         log.info('\t>>> TEST de COMPARAISON de FICHIERS <<<')
         log.info('\t=======================================')
@@ -2757,23 +2880,23 @@ if __name__ == "__main__":
         with open(f_reference, "wt") as new_file:
             new_file.write(reference)
 
-        log.info('')
-        log.info('Fichier de référence :')
-        log.info('~~~~~~~~~~~~~~~~~~~~~~')
-        log.info('«')
-        log.info('%s', reference)
-        log.info('»')
-        log.info('')
+        log.debug('')
+        log.debug('Fichier de référence :')
+        log.debug('~~~~~~~~~~~~~~~~~~~~~~')
+        log.debug('«')
+        log.debug('%s', reference)
+        log.debug('»')
+        log.debug('')
 
         with open(f_reference, "rt") as new_file:
-            log.info('')
-            log.info('Fichier de référence tel que converti en ENSEMBLE :')
-            log.info('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
-            log.info('«')
+            log.debug('')
+            log.debug('Fichier de référence tel que converti en ENSEMBLE :')
+            log.debug('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
+            log.debug('«')
             for elt in set(new_file):
-                log.info('%s', str(elt).rstrip('\r\n'))
-            log.info('»')
-            log.info('')
+                log.debug('%s', str(elt).rstrip('\r\n'))
+            log.debug('»')
+            log.debug('')
 
 
         # On créé & on log le fichier à comparer.
@@ -2788,31 +2911,31 @@ if __name__ == "__main__":
         with open(f_transformation, "wt") as new_file:
             new_file.write(transformation)
 
-        log.info('')
-        log.info('Fichier transformé :')
-        log.info('~~~~~~~~~~~~~~~~~~~~')
-        log.info('«')
-        log.info('%s', transformation)
-        log.info('»')
-        log.info('')
+        log.debug('')
+        log.debug('Fichier transformé :')
+        log.debug('~~~~~~~~~~~~~~~~~~~~')
+        log.debug('«')
+        log.debug('%s', transformation)
+        log.debug('»')
+        log.debug('')
 
         with open(f_transformation, "rt") as new_file:
-            log.info('')
-            log.info('Fichier transformé tel que converti en ENSEMBLE :')
-            log.info('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
-            log.info('«')
+            log.debug('')
+            log.debug('Fichier transformé tel que converti en ENSEMBLE :')
+            log.debug('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
+            log.debug('«')
             for elt in set(new_file):
-                log.info('%s', str(elt).rstrip('\r\n'))
-            log.info('»')
-            log.info('')
+                log.debug('%s', str(elt).rstrip('\r\n'))
+            log.debug('»')
+            log.debug('')
 
 
         # On compare les 2 fichiers : INTERSECTION.
         #
-        log.info('')
-        log.info("RÉSULTAT de l'INTERSECTION des deux FICHIERS :")
-        log.info('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
-        log.info('«')
+        _show_('', log)
+        _show_("RÉSULTAT de l'INTERSECTION des deux FICHIERS :", log)
+        _show_('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~', log)
+        _show_('«', log)
  
         intersection = my_skeleton.compare_files(
             True,
@@ -2822,17 +2945,17 @@ if __name__ == "__main__":
             )
 
         for elt in intersection:
-            log.info('%s', str(elt).rstrip('\r\n'))
-        log.info('»')
-        log.info('')
+            _show_(str(elt).rstrip('\r\n'), log)
+        _show_('»', log)
+        _show_('', log)
 
 
         # On compare les 2 fichiers : DIFFÉRENCE / au fichier référence.
         #
-        log.info('')
-        log.info('LIGNES de la RÉFÉRENCE NON PRÉSENTES dans le fichier transformé :')
-        log.info('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
-        log.info('«')
+        _show_('', log)
+        _show_('LIGNES de la RÉFÉRENCE NON PRÉSENTES dans le fichier transformé :', log)
+        _show_('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~', log)
+        _show_('«', log)
 
         difference = my_skeleton.compare_files(
             True,
@@ -2842,9 +2965,9 @@ if __name__ == "__main__":
             )
 
         for elt in difference:
-            log.info('%s', str(elt).rstrip('\r\n'))
-        log.info('»')
-        log.info('')
+            _show_(str(elt).rstrip('\r\n'), log)
+        _show_('»', log)
+        _show_('', log)
 
 
         # On compare les 2 fichiers : DIFFÉRENCE / au 2ème fichier.
@@ -2852,10 +2975,10 @@ if __name__ == "__main__":
         # C-a-d que l'on va ici donner les lignes en plus dans le
         # 2ème fichier...
         #
-        log.info('')
-        log.info("LIGNES AJOUTÉES / MODIFIÉES dans le FICHIER TRANSFORMÉ :")
-        log.info('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
-        log.info('«')
+        _show_('', log)
+        _show_('LIGNES AJOUTÉES / MODIFIÉES dans le FICHIER TRANSFORMÉ :', log)
+        _show_('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~', log)
+        _show_('«', log)
  
         ajouts = my_skeleton.compare_files(
             True,
@@ -2865,17 +2988,17 @@ if __name__ == "__main__":
             )
 
         for elt in ajouts:
-            log.info('%s', str(elt).rstrip('\r\n'))
-        log.info('»')
-        log.info('')
+            _show_(str(elt).rstrip('\r\n'), log)
+        _show_('»', log)
+        _show_('', log)
 
 
         # On compare les 2 fichiers : DIFFÉRENCE SYMÉTRIQUE.
         #
-        log.info('')
-        log.info("RÉSULTAT de la DIFFÉRENCE SYMÉTRIQUE entre les deux FICHIERS :")
-        log.info('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
-        log.info('«')
+        _show_('', log)
+        _show_('RÉSULTAT de la DIFFÉRENCE SYMÉTRIQUE entre les deux FICHIERS :', log)
+        _show_('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~', log)
+        _show_('«', log)
  
         intersection = my_skeleton.compare_files(
             True,
@@ -2885,9 +3008,9 @@ if __name__ == "__main__":
             )
 
         for elt in intersection:
-            log.info('%s', str(elt).rstrip('\r\n'))
-        log.info('»')
-        log.info('')
+            _show_(str(elt).rstrip('\r\n'), log)
+        _show_('»', log)
+        _show_('', log)
 
 
     # #######################################################################
@@ -2906,6 +3029,7 @@ if __name__ == "__main__":
         # On appelle les fonctions convert_to_pdf_*() pour
         # vérifier que Python ne plante pas en leur sein.
         #
+        log.info('')
         log.info('\t=====================================')
         log.info('\t>>> TEST de get_unused_filename() <<<')
         log.info('\t=====================================')
@@ -2914,39 +3038,49 @@ if __name__ == "__main__":
 
         f_name = it_begins_with + '.tmp'
 
-        log.info('Nom de référence = « %s »', f_name)
-        log.info('')
+        _show_('Nom de référence = « {0} »'.format(
+            f_name),
+            log
+            )
+        _show_('', log)
 
         f_tmp = my_skeleton.get_unused_filename(
             f_name,
             idx_force = False
             )
 
-        log.info('Prochain nom disponible = « %s »', f_tmp)
-        log.info('')
+        _show_('Prochain nom disponible = « {0} »'.format(
+            f_tmp),
+            log
+            )
+        _show_('', log)
 
-        log.info('Création de « %s »', f_tmp)
-        log.info('')
+        _show_('Création de « {0} »'.format(
+            f_tmp),
+            log
+            )
+        _show_('', log)
 
         with open(f_tmp, "wt") as f_test:
             f_test.write('Dummy')
 
-        log.info('Prochain nom disponible après « %s » ...',
-                    f_tmp
-                    )
-        log.info('')
+        _show_('Prochain nom après « {0} » ...'.format(
+            f_tmp),
+            log
+            )
+        _show_('', log)
 
-        log.info('\t* avec 3 chiffres en partant de 0 : « %s »',
-                    my_skeleton.get_unused_filename(f_name)
-                    )
-        log.info('')
+        _show_('\t* sur 3 chiffres, base 0 : « {0} »'.format(
+            my_skeleton.get_unused_filename(f_name)),
+            log
+            )
+        _show_('', log)
 
-        log.info('\t* avec 18 chiffres en partant de 33 : « %s »',
-                    my_skeleton.get_unused_filename(
-                        f_name, 18, 33
-                        )
-                    )
-        log.info('')
+        _show_('\t* sur 18 chiffres, base 33 : « {0} »'.format(
+            my_skeleton.get_unused_filename(f_name, 18, 33)),
+            log
+            )
+        _show_('', log)
 
 
     # #######################################################################
@@ -2965,14 +3099,31 @@ if __name__ == "__main__":
         # On appelle shutdown_please() pour vérifier
         # que Python ne plante pas en le parcourant.
         #
+        log.info('')
         log.info('\t=================================')
         log.info('\t>>> TEST de shutdown_please() <<<')
         log.info('\t=================================')
         log.info('')
         log.info('')
+
+        _show_('SHUTDOWN « par défaut » ( rien )', log)
+        _show_('', log)
+
         my_skeleton.shutdown_please()
+
+        _show_('', log)
+        _show_('SHUTDOWN « complet »', log)
+        _show_('', log)
+
         my_skeleton.shutdown_please(shutdown_complete)
+
+        _show_('', log)
+        _show_('SHUTDOWN « hibernation »', log)
+        _show_('', log)
+
         my_skeleton.shutdown_please(shutdown_hibernate)
+
+        _show_('', log)
 
 
     # On teste l'émission d'un son de réveil.
@@ -3005,11 +3156,16 @@ if __name__ == "__main__":
         # On appelle shutdown_please() pour vérifier
         # que Python ne plante pas en le parcourant.
         #
+        log.info('')
         log.info('\t==================================')
         log.info('\t>>> TEST de on_dit_au_revoir() <<<')
         log.info('\t==================================')
         log.info('')
         log.info('')
+
+        _show_('Nous invoquons donc on_dit_au_revoir().', log)
+        _show_('', log)
+
         my_skeleton.on_dit_au_revoir()
 
     else:
@@ -3021,5 +3177,5 @@ if __name__ == "__main__":
         #
         # Elle-même appellera on_dit_au_revoir()
         #
-        print('On laisse donc le script le faire tout seul.')
-        print()
+        _show_('On laisse donc le script le faire tout seul.', log)
+        _show_('', log)
