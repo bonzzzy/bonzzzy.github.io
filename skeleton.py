@@ -2768,6 +2768,7 @@ class ScriptSkeleton:
             « byte strings ».
         """
 
+        log = self.logItem
         new_name = os.path.exists(destination)
 
         if new_name:
@@ -2781,7 +2782,7 @@ class ScriptSkeleton:
                     + destination \
                     + ' » !!!'
 
-                new_name = self.ask_yes_or_no(msg, 'n')
+                new_name = not self.ask_yes_or_no(msg, 'n')
 
         if new_name:
 
@@ -2812,6 +2813,14 @@ class ScriptSkeleton:
             # On ouvre notre fichier au format « t(ext) ».
             #
             flag = "wt"
+
+        log.debug('Coding en entrée = « %s »', coding)
+        log.debug('Format en sortie = « %s »', flag)
+        log.debug('')
+
+        _show_('Destination = ' + file_dst, log)
+        _warn_('Format = « ' + flag + ' »')
+        _show_('', log)
 
         with open(file_dst, flag) as new_file:
 
