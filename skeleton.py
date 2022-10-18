@@ -232,8 +232,9 @@ def _show_(msg, journal):
     même temps.
     """
 
-    journal.debug(msg)
     print(msg)
+    if journal is not None:
+        journal.debug(msg)
 
 
 def _warn_(msg):
@@ -1027,16 +1028,23 @@ class ScriptSkeleton:
         log.debug('==================')
         log.debug('')
 
-        nb_parameters_in = len(arguments)
+        nb_parameters_in = 0 if arguments is None else len(arguments)
 
         log.debug('Nombre de paramètres = %s', nb_parameters_in)
         log.debug('Liste des paramètres = %s', arguments)
         log.debug('')
 
-        for counter, parameter in enumerate(arguments, start=0):
-    
-            log.debug('Paramètre n° %s ie sys.argv[ %s ] = %s', counter, counter, parameter)
-        
+        if arguments is not None:
+
+            for counter, parameter in enumerate(arguments, start=0):
+
+                log.debug(
+                    'Paramètre n° %s ie sys.argv[ %s ] = %s',
+                    counter,
+                    counter,
+                    parameter
+                    )
+
         log.debug('')
 
         return nb_parameters_in
@@ -2784,6 +2792,8 @@ class ScriptSkeleton:
         destination: str,
         ok_to_erase: bool = False,
         ask_confirm: bool = True,
+        must_be_new: bool = False,
+        new_suffix: str = ' { new version }',
         coding: str = coding_default,
         ):
         """ Pour sauvegarder une ou des chaînes de
@@ -2802,6 +2812,15 @@ class ScriptSkeleton:
         :param ask_confirm: True si l'on veut qu'une
         confirmation soit demandée avant d'écraser le
         fichier.
+
+        :param must_be_new: si l'on veut forcément que
+        le nom de fichier soit « inspiré », dérivé, du
+        nom qui nous a été fourni, sans être le même...
+        i-e s'il faut forcément créé un nouveau nom.
+
+        :param new_suffix: le suffix qui doit être accolé
+        au nom de fichier qui nous a été fourni, si l'on
+        doit bâtir un nouveau nom.
 
         :param coding: quel est le jeu de caractères
         du fichier à créer ? Cela nous permet surtout
@@ -2830,14 +2849,17 @@ class ScriptSkeleton:
 
                 new_name = not self.ask_yes_or_no(msg, 'n')
 
-        if new_name:
+        if new_name or must_be_new:
 
             # On créé un nouveau nom de fichier si celui
             # qui nous a été donné ne peut être utilisé.
             #
             name, ext = os.path.splitext(destination)
-            tmp_dst = name + " { new version }" + ext
-            file_dst = self.get_unused_filename(tmp_dst)
+            tmp_dst = name + new_suffix + ext
+            file_dst = self.get_unused_filename(
+                tmp_dst,
+                idx_force = True
+                )
 
         else:
 
@@ -2916,13 +2938,13 @@ class ScriptSkeleton:
     def send_request_http(
         self,
         url: str,
-        set_of_chars: str = coding_unknown
-        ) -> str:
+        coding: str = coding_unknown
+        ) -> (str, str):
         """ Pour envoyer une requête HTTP et en recevoir le résultat.
 
         :param url: la requête à lancer.
 
-        :param set_of_chars: l'encodage attendu de la réponse.
+        :param coding: l'encodage attendu de la réponse.
 
         :return: la réponse au format souhaité.
         """
@@ -2986,10 +3008,15 @@ class ScriptSkeleton:
         else:
             html_bytes = response.read()
 
-            _warn_(html_bytes)
-            _warn_('')
+            log.debug(html_bytes)
+            log.debug('')
 
-            if set_of_chars == coding_unknown:
+            _show_(
+                'Coding en entrée = « {0} »'.format(coding),
+                log
+                )
+
+            if coding == coding_unknown:
 
                 # headers.get_content_charset() sait lire les
                 # fichiers au format HTML.
@@ -3005,9 +3032,15 @@ class ScriptSkeleton:
                 # Dans le cas où get_content_charset() ne peut
                 # donner de réponse, il renverra « None ».
                 #
-                set_of_chars = response.headers.get_content_charset()
+                coding = response.headers.get_content_charset()
 
-            if set_of_chars is None:
+            _show_(
+                'Coding calculé = « {0} »'.format(coding),
+                log
+                )
+            _show_('', log)
+
+            if coding is None:
 
                 # Aucun décodage à faire car le jeu de caractères
                 # qui nous concerne est celui des « byte strings ».
@@ -3015,12 +3048,12 @@ class ScriptSkeleton:
                 html_string = html_bytes
 
             else:
-                html_string = html_bytes.decode(set_of_chars)
+                html_string = html_bytes.decode(coding)
 
-            _warn_(html_string)
-            _warn_('')
+            log.debug(html_string)
+            log.debug('')
 
-        return html_string
+        return (coding, html_string)
 
 
 # ---------------------------------------------------------------------------
