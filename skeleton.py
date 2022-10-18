@@ -60,6 +60,7 @@ from socket import timeout
 # ===========================================================================
 #
 #   - Fonctions d'initialisation des EXÉCUTABLES et RÉPERTOIRES utilisés :
+#
 #   ( in autotests )    . def set_paths_and_miscellaneous
 #                       . def get_paths_and_miscellaneous
 #                       . def show_paths_and_miscellaneous
@@ -68,6 +69,7 @@ from socket import timeout
 # ===========================================================================
 #
 #   - Fonctions pour journalisation des WARNINGS et ERREURS ( DÉBOGAGE ) : 
+#
 #   ( in autotests )    . def on_ouvre_le_journal
 #   ( in autotests )    . def on_se_presente
 #                       . def debug_mode
@@ -76,17 +78,20 @@ from socket import timeout
 # ===========================================================================
 #
 #   - Fonctions spécifiques à l'OPERATING SYSTEM ( bip, shutdown, ... ) :
+#
 #   ( in autotests )    . def on_sonne_le_reveil
 #   ( in autotests )    . def shutdown_please
 #
 # ===========================================================================
 #
 #   - Fonctions spécifiques au TEMPS :
+#
 #                       . def build_now_string
 #
 # ===========================================================================
 #
 #   - Fonctions de SAISIE de DONNÉES :
+#
 #   ( in autotests )    . def ask_yes_or_no
 #   ( in autotests )    . def choose_in_a_list
 #   ( in autotests )    . def choose_in_a_dict
@@ -94,6 +99,7 @@ from socket import timeout
 # ===========================================================================
 #
 #   - Fonctions de GESTION de FICHIERS :
+#
 #   ( in autotests )    . def search_files_from_a_mask
 #   ( in autotests )    . def convert_to_pdf_init
 #   ( in autotests )    . def convert_to_pdf_run
@@ -104,6 +110,7 @@ from socket import timeout
 # ===========================================================================
 #
 #   - Fonctions spécifiques au WEB ( browser, HTML, HTTP, etc ) :
+#
 #                       . def url_to_valid
 #                       . def send_request_http
 #
@@ -2086,6 +2093,7 @@ class ScriptSkeleton:
         log = self.logItem
 
         if directory is None:
+
             log.debug('Pas de répertoire de recherche indiqué.')
             log.debug('Donc ce sera le répertoire de travail.')
 
@@ -2113,6 +2121,7 @@ class ScriptSkeleton:
         # code )...
         #
         if mask == '*':
+
             # Cas d'1 chaîne de recherche très simple i-e : « * ».
             #
             simple_search = True
@@ -2120,6 +2129,7 @@ class ScriptSkeleton:
             log.debug('On accepte ici tous les fichiers.')
 
         elif mask[0] == '*' and not '*' in mask[1:]:
+
             # Cas d'1 chaîne de recherche simple i-e : « *< suffix > ».
             #
             simple_search = True
@@ -2127,6 +2137,7 @@ class ScriptSkeleton:
             log.debug("Recherche des fichiers d'extension : « %s ».", suffix)
 
         else:
+
             # Cas d'1 chaîne de recherche complexe telle : « title_t*.mkv ».
             #
             simple_search = False
@@ -2147,6 +2158,7 @@ class ScriptSkeleton:
             suffix_lower = suffix.lower()
 
             for file_or_dir in os.listdir(directory):
+
                 # Si le fichier a le suffixe voulu, on l'intègre à la liste.
                 #
                 # Pour ceci, le plus "universel" est de vérifier que l'on trouve
@@ -2172,10 +2184,37 @@ class ScriptSkeleton:
                 #       - alors tous ces fichiers ressortent dans la liste !!!
                 #
                 # Bien sûr, avant d'intégrer le fichier à la liste, on vérifie que
-                # c'est bien un fichier et non un répertoire !!!
+                # c'est bien un fichier et non un répertoire !!! ( opération qui
+                # est certainement plus longue que les autres opérations de test
+                # donc on la réalise en dernier )
                 #
+                # ATTENTION : Avant, au regard de l'algorithme décrit ci-dessus,
+                # le test effectué était :
+                #
+                #       if suffix == '' or \
+                #       (file_or_dir.lower().rfind(suffix_lower) == len(file_or_dir) - len(suffix)):
+                #
+                # ... mais, pour des noms de fichiers courts, type « @i », ce test
+                # ( sa 2ème partie ) ne marchait pas avec, par exemple, « *.py » :
+                #
+            	#	    - file_or_dir = @i
+            	#	    - suffix_lower = .py
+            	#	    - file_or_dir.lower().rfind(suffix_lower) = -1 [ car échec de la recherche ]
+            	#	    - len(file_or_dir) - len(suffix) = 2 - 3 = -1
+                #
+                # ... d'où la réécriture de ce test ci-dessous.
+                #
+                # Ce teste marche d'ailleurs pour des données telles :
+                #
+                #       - masque = « *.py »
+                #       - fichier = « .py »
+                #
+                suffix_place = file_or_dir.lower().rfind(suffix_lower)
+
                 if suffix == '' or \
-                        (file_or_dir.lower().rfind(suffix_lower) == len(file_or_dir) - len(suffix)):
+                    (suffix_place >= 0 and \
+                     len(file_or_dir) >= len(suffix) and \
+                     suffix_place == len(file_or_dir) - len(suffix)):
 
                     if os.path.isfile(file_or_dir):
                         found_files.append(file_or_dir)
