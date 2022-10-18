@@ -95,15 +95,15 @@ if __name__ == "__main__":
 
             if ext in skeleton.filetype_to_coding.keys():
 
-                character_set = skeleton.filetype_to_coding[ext]
+                set_of_chars = skeleton.filetype_to_coding[ext]
 
             else:
 
-                character_set = skeleton.coding_unknown
+                set_of_chars = skeleton.coding_unknown
 
-            content = _my_skeleton.send_request_http(
+            charset, content = _my_skeleton.send_request_http(
                 url_src,
-                character_set
+                set_of_chars
                 )
 
             if content == '':
@@ -127,7 +127,7 @@ if __name__ == "__main__":
                     destination = file_src,
                     ok_to_erase = erase_file,
                     ask_confirm = False,
-                    coding = character_set
+                    coding = charset
                     )
 
                 print('===>> File saved')
