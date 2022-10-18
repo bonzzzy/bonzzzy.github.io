@@ -3008,8 +3008,8 @@ class ScriptSkeleton:
         else:
             html_bytes = response.read()
 
-            log.debug(html_bytes)
-            log.debug('')
+            # log.debug(html_bytes)
+            # log.debug('')
 
             _show_(
                 'Coding en entrée = « {0} »'.format(coding),
@@ -3050,8 +3050,8 @@ class ScriptSkeleton:
             else:
                 html_string = html_bytes.decode(coding)
 
-            log.debug(html_string)
-            log.debug('')
+            # log.debug(html_string)
+            # log.debug('')
 
         return (coding, html_string)
 
