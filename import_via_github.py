@@ -109,8 +109,7 @@ if __name__ == "__main__":
             if content == '':
 
                 if ___debug___:
-                    print()
-                    print('Fichier source introuvable !!!')
+                    print('===>> Fichier source introuvable !!!')
 
             else:
 
@@ -131,7 +130,6 @@ if __name__ == "__main__":
                     coding = character_set
                     )
 
-                print('')
                 print('===>> File saved')
 
                 #os.startfile(file_dst)
