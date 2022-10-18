@@ -89,7 +89,6 @@ if __name__ == "__main__":
 
             url_src = url_base + file_src
 
-            print()
             print('URL =', url_src)
 
             _, ext = os.path.splitext(file_src)
@@ -128,7 +127,7 @@ if __name__ == "__main__":
                     content,
                     destination = file_src,
                     ok_to_erase = erase_file,
-                    ask_confirm = True,
+                    ask_confirm = False,
                     coding = character_set
                     )
 
