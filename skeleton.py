@@ -665,7 +665,7 @@ class ScriptSkeleton:
                 # cela marche sur un PC de bureau comme sur un portable...
                 #
                 player_exe = os.path.join(root, 'System32', 'mplay32.exe')
-                player_arg = ('/play', '/close')
+                player_arg = ['/play', '/close']
                 played = os.path.join(root, 'Media', 'Windows XP Battery Low.wav')
 
             else:
@@ -1407,6 +1407,7 @@ class ScriptSkeleton:
                 pass
 
             elif isinstance(args, list):
+
                 for arg in args:
                     command_line.append(arg)
 
@@ -1420,6 +1421,12 @@ class ScriptSkeleton:
 
             else:
                 command_line.append(played)
+
+            _warn_('Player\t= ' + str(player))
+            _warn_('Played\t= ' + str(played))
+            _warn_('Args\t= ' + str(args))
+            _warn_('liste?\t= ' + str(isinstance(args, list)))
+            _warn_('')
 
             log.debug("Commande exécutée = %s", command_line)
 
@@ -3486,7 +3493,75 @@ if __name__ == "__main__":
         _show_('', log)
 
 
-    # On teste l'émission d'un son de réveil.
+    # #######################################################################
+    # -----------------------------------------------------------------------
+    # #######################################################################
+    # -----------------------------------------------------------------------
+    # #######################################################################
+    #
+    user_answer = (os.name.upper() == 'NT')
+
+    if user_answer:
+
+        print(
+            '\nATTENTION : Le test suivant demande à ce que :\n\n',
+            '\t- mplay32.exe soit dans le répertoire de travail,\n\n',
+            '\t- ainsi que « Windows XP Battery Low.wav ».\n')
+
+        user_answer = my_skeleton.ask_yes_or_no(
+            "Voulez-vous que je teste le réveil via mplay32.exe ?",
+            'non'
+            )
+
+    if user_answer:
+
+        # On sauvegarde les vraies valeurs.
+        #
+        real_exe = my_skeleton.paths_and_miscellaneous['EXE_player']
+        real_arg = my_skeleton.paths_and_miscellaneous['ARG_player']
+        real_played = my_skeleton.paths_and_miscellaneous['EXE_played']
+
+        # On affecte des valeurs permettant le test.
+        #
+        working_path = my_skeleton.paths_and_miscellaneous['working_PATH_FULL']
+
+        player_exe = os.path.join(working_path, 'mplay32.exe')
+        player_arg = ['/play', '/close']
+        played = os.path.join(working_path, 'Windows XP Battery Low.wav')
+
+        my_skeleton.paths_and_miscellaneous['EXE_player'] = player_exe
+        my_skeleton.paths_and_miscellaneous['ARG_player'] = player_arg
+        my_skeleton.paths_and_miscellaneous['EXE_played'] = played
+
+        # On teste l'émission via mplay32.exe d'un son de réveil.
+        #
+        if os.path.isfile(player_exe) and os.path.isfile(played):
+
+            my_skeleton.on_sonne_le_reveil()
+
+            # On marque une pause le temps que l'utilisateur puisse entendre
+            # le son ( et donc que mplay32.exe puisse le jouer... ).
+            #
+            input('Frapper <Entrée> une fois le son entendu...')
+
+        else:
+            _show_('Certains fichiers demandés sont ABSENTS !!!', log)
+            _show_('', log)
+
+        # On restaure les vraies valeurs.
+        #
+        my_skeleton.paths_and_miscellaneous['EXE_player'] = real_exe
+        my_skeleton.paths_and_miscellaneous['ARG_player'] = real_arg
+        my_skeleton.paths_and_miscellaneous['EXE_played'] = real_played
+
+
+    # #######################################################################
+    # -----------------------------------------------------------------------
+    # #######################################################################
+    # -----------------------------------------------------------------------
+    # #######################################################################
+    #
+    # On teste l'émission « normale » ( par défaut ) d'un son de réveil.
     #
     my_skeleton.on_sonne_le_reveil()
 
