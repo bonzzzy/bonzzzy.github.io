@@ -2795,7 +2795,7 @@ class ScriptSkeleton:
         must_be_new: bool = False,
         new_suffix: str = ' { new version }',
         coding: str = coding_default,
-        ):
+        ) -> str:
         """ Pour sauvegarder une ou des chaînes de
         caractères dans un fichier.
 
@@ -2831,6 +2831,9 @@ class ScriptSkeleton:
             D'après la CONVENTION adoptée dans ce script,
             None ou coding_bytes indique un encodage en
             « byte strings ».
+
+        :return: le nom du fichier créé (au cas où nous
+        ayions dû bâtir un nouveau nom...).
         """
 
         log = self.logItem
@@ -2896,6 +2899,8 @@ class ScriptSkeleton:
 
                 new_file.write(content)
 
+        return file_dst
+
 
 # ---------------------------------------------------------------------------
 #
@@ -2956,8 +2961,8 @@ class ScriptSkeleton:
         html_string = ''
 
         url_valid = self.url_to_valid(url)
-        _show_('URL = ' + url, log)
-        _show_('URL ok = ' + url_valid, log)
+        _show_('URL get = ' + url, log)
+        _show_('URL ok  = ' + url_valid, log)
         _show_('', log)
 
         try:
