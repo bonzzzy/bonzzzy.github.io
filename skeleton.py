@@ -2946,13 +2946,17 @@ class ScriptSkeleton:
 
         :param coding: l'encodage attendu de la réponse.
 
-        :return: la réponse au format souhaité.
+        :return: la réponse + le format de cette réponse.
+        Ce format correspondra au format souhaité, sauf si nous avons
+        eu à le modifier. Ce qui sera par exemple le cas si celui qui
+        nous a été transmis était « coding_unknown ».
         """
 
         log = self.logItem
         html_string = ''
 
         url_valid = self.url_to_valid(url)
+        _show_('URL = ' + url, log)
         _show_('URL ok = ' + url_valid, log)
         _show_('', log)
 
@@ -3008,8 +3012,9 @@ class ScriptSkeleton:
         else:
             html_bytes = response.read()
 
-            # log.debug(html_bytes)
-            # log.debug('')
+            log.debug('Début de « html_bytes » :')
+            log.debug(html_bytes[0:99])
+            log.debug('')
 
             _show_(
                 'Coding en entrée = « {0} »'.format(coding),
@@ -3050,10 +3055,11 @@ class ScriptSkeleton:
             else:
                 html_string = html_bytes.decode(coding)
 
-            # log.debug(html_string)
-            # log.debug('')
+            log.debug('Début de « html_string » :')
+            log.debug(html_string[0:99])
+            log.debug('')
 
-        return (coding, html_string)
+        return (html_string, coding)
 
 
 # ---------------------------------------------------------------------------
