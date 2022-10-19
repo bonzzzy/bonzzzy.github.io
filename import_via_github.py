@@ -16,18 +16,6 @@ import skeleton
 url_base = "https://bonzzzy.github.io/"
 
 
-# On stocke en variable globale notre fichier
-# de log, et ce afin de ne pas avoir à le passer
-# en paramètres...
-#
-# Idem pour notre "squelette".
-#
-# Idem pour notre éventuel seul fichier temporaire.
-#
-_my_log = None
-_my_skeleton = None
-
-
 if __name__ == "__main__":
 
     skeleton.___debug___ = ___debug___
@@ -89,8 +77,6 @@ if __name__ == "__main__":
 
             url_src = url_base + file_src
 
-            print('URL =', url_src)
-
             _, ext = os.path.splitext(file_src)
 
             if ext in skeleton.filetype_to_coding.keys():
@@ -101,7 +87,7 @@ if __name__ == "__main__":
 
                 set_of_chars = skeleton.coding_unknown
 
-            charset, content = _my_skeleton.send_request_http(
+            content, charset = _my_skeleton.send_request_http(
                 url_src,
                 set_of_chars
                 )
