@@ -23,6 +23,8 @@ import sys
 import time
 import datetime
 
+from string import whitespace
+
 import tempfile
 import subprocess
 
@@ -1703,7 +1705,7 @@ class ScriptSkeleton:
             _show_('', log)
 
         if default is not None:
-            default = default.strip(' \t')
+            default = default.strip(whitespace)
 
         dflt_empty = default is None or default == ''
 
@@ -1735,7 +1737,7 @@ class ScriptSkeleton:
             answer = input(prompt)
             print()
 
-            if answer.strip(' \t') == '':
+            if answer.strip(whitespace) == '':
                 answer = default
 
             if answer in our_yes_or_no.keys():
@@ -2958,7 +2960,7 @@ class ScriptSkeleton:
         """
 
         log = self.logItem
-        html_string = ''
+        url_string = ''
 
         url_valid = self.url_to_valid(url)
         _show_('URL get = ' + url, log)
@@ -2966,10 +2968,18 @@ class ScriptSkeleton:
         _show_('', log)
 
         try:
-            response = urllib.request.urlopen(
-                url_valid,
-                timeout = 3
-                )
+
+            # Pour économiser les ressources, on utilise WITH... ie
+            # l'objet réponse sera libéré dès la sortie du bloc.
+            #
+            # « Using the context manager with, you make a request and
+            # receive a response with urlopen(). Then you read the body
+            # of the response and close the response object. »
+            #
+            with urllib.request.urlopen(url_valid, timeout=3) as data:
+
+                url_bytes = data.read()
+                url_coding = data.headers.get_content_charset()
 
         except InvalidURL as error:
             _show_('===>> InvalidURL = ' \
@@ -3015,10 +3025,9 @@ class ScriptSkeleton:
             _show_('', log)
 
         else:
-            html_bytes = response.read()
 
-            log.debug('Début de « html_bytes » :')
-            log.debug(html_bytes[0:99])
+            log.debug('Début de « url_bytes » :')
+            log.debug(url_bytes[0:99])
             log.debug('')
 
             _show_(
@@ -3042,7 +3051,7 @@ class ScriptSkeleton:
                 # Dans le cas où get_content_charset() ne peut
                 # donner de réponse, il renverra « None ».
                 #
-                coding = response.headers.get_content_charset()
+                coding = url_coding
 
             _show_(
                 'Coding calculé = « {0} »'.format(coding),
@@ -3055,16 +3064,16 @@ class ScriptSkeleton:
                 # Aucun décodage à faire car le jeu de caractères
                 # qui nous concerne est celui des « byte strings ».
                 #
-                html_string = html_bytes
+                url_string = url_bytes
 
             else:
-                html_string = html_bytes.decode(coding)
+                url_string = url_bytes.decode(coding)
 
-            log.debug('Début de « html_string » :')
-            log.debug(html_string[0:99])
+            log.debug('Début de « url_string » :')
+            log.debug(url_string[0:99])
             log.debug('')
 
-        return (html_string, coding)
+        return (url_string, coding)
 
 
 # ---------------------------------------------------------------------------
