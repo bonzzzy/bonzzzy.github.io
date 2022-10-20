@@ -11,8 +11,6 @@ import sys
 import skeleton
 
 
-#url_base = 'https://www.google.com/'
-#url_base = 'https://www.google.com/search?q=test'
 url_base = "https://bonzzzy.github.io/"
 
 
