@@ -1213,7 +1213,9 @@ class ScriptSkeleton:
 
             else:
 
-                log.removeHandler(self._logHandler)
+                self.logItem.removeHandler(
+                    self._logHandler
+                    )
 
             self._logHandler.close()
 
