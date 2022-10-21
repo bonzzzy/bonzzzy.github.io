@@ -304,7 +304,38 @@ class ScriptSkeleton:
 
         self.logItem = None
         self.logItem = self.on_ouvre_le_journal(module_name)
-        
+
+
+        # ATTENTION : Lorsque nous serons dans notre méthode __del__() et donc dans le
+        # ramasse-miettes de Python = POTENTIELLEMENT, les objets LOG seront aussi en
+        # train d’être détruits, voire l'auront déjà été... !!!
+        #
+        # Donc nous nous prémunissons contre cela via des fonctions LAMBDA qui feront
+        # ou pas référence à notre log, suivant le cas.
+        #
+        # D'expérience, appeler dans notre __del__() le module LOG ne pose en fait pas
+        # de pb sous Python 3.10 et Windows 10.
+        #
+        # Par contre, sous Python 3.9 ( a-Shell ) et iOS, cela provoque des bugs d'appels
+        # dans le module LOG qui ne retrouve plus ses petits...
+        #
+        # Pour l'instant, notre LOG vient d'être créé, donc pas de souci !!!
+        #
+        self.shw_info = lambda x: self.logItem.info(x)
+        self.shw_debug = lambda x: self.logItem.debug(x)
+        #
+        # Dans notre méthode __del__(), nous attribuerons d'autres valeurs à self.shw_info
+        # et ) self.shw_debug.
+        #
+        # Par ailleurs, ces 2 fonctions sont ( actuellement ) utilisées seulement dans nos
+        # méthodes invoquées directement ou indirectement depuis notre méthode __del__()
+        # i.e :
+        #
+        #       - on_dit_au_revoir()
+        #       - edit_file_txt()
+        #       - get_paths_and_miscellaneous()
+
+
         # Le dictionnaire « paths_and_miscellaneous » contiendra la liste des fichiers
         # & répertoires utiles, i-e il contiendra à minima les entrées suivantes :
         #
@@ -342,6 +373,16 @@ class ScriptSkeleton:
         """
 
         self._we_are_inside_del_method = True
+
+        # ATTENTION : Dans notre méthode __del__() et donc dans le ramasse-miettes
+        # de Python = POTENTIELLEMENT, les objets LOG sont aussi en train d’être
+        # détruits, voire l'ont déjà été... !!!
+        #
+        # Donc nous choisissons d'autres façons d'afficher le LOG en cette toute
+        # fin de script !!!
+        #
+        self.shw_info = lambda x: print(x)
+        self.shw_debug = lambda x: _warn_(x)
 
         # On quitte l'application...
         #
@@ -796,15 +837,14 @@ class ScriptSkeleton:
         :return: la valeur souhaitée.
         """
 
-        log = self.logItem
         value = None
 
         if self.paths_and_miscellaneous is None \
             or len(self.paths_and_miscellaneous) == 0:
 
-            log.debug('« %s » est inconnu.', index)
-            log.debug("« paths_and_miscellaneous » est vide.")
-            log.debug('')
+            self.shw_debug(f'« {index} » est inconnu.')
+            self.shw_debug("« paths_and_miscellaneous » est vide.")
+            self.shw_debug('')
 
         else:
 
@@ -831,8 +871,8 @@ class ScriptSkeleton:
                 else:
                     msg = msg + ' sur {0}.'.format(os.name.upper())
 
-                log.debug(msg)
-                log.debug('')
+                self.shw_debug(msg)
+                self.shw_debug('')
             
         return value
 
@@ -1131,49 +1171,22 @@ class ScriptSkeleton:
             #
             self._we_already_said_bye = True
 
-            # ATTENTION : Si ns sommes dans notre méthode
-            # __del__() et donc dans le ramasse-miettes
-            # de Python. Potentiellement, les objets LOG
-            # sont aussi en train d’être détruits, voire
-            # l'ont déjà été... !!!
-            #
-            # Donc nous nous prémunissons contre cela via
-            # des fonctions LAMBDA qui appelerons ou pas
-            # notre log, suivant le cas.
-            #
-            # D'expérience, appeler dans notre __del__()
-            # le module LOG ne pose en fait pas de pb sous
-            # Python 3.10 et Windows 10.
-            #
-            # Par contre, sous Python 3.9 ( a-Shell ) et
-            # iOS, cela provoque des bugs d’appels dans le
-            # module LOG qui ne retrouve plus ses petits...
-            #
-            if self._we_are_inside_del_method:
-
-                shw_info = lambda x: print(x)
-                shw_debug = lambda x: _warn_(x)
-
-            else:
-
-                log = self.logItem
-
-                shw_info = lambda x: log.info(x)
-                shw_debug = lambda x: log.debug(x)
-
-            shw_info('BYE')
-            shw_info('')
+            self.shw_info('BYE')
+            self.shw_info('')
 
             # S'il est demandé d'afficher le journal en
             # fin de traitements, on le fait.
             #
             # ... sauf si nous sommes déjà dans notre
-            # méthode __del(), sinon cela va planter car
-            # bcp d'objets sont déjà potentiellement en
-            # cours de destruction !!!
+            # méthode __del__(), sinon cela va planter car
+            # beaucoup d'objets sont déjà potentiellement
+            # en cours de destruction !!!
             #
-            if not self._we_are_inside_del_method \
-            and log_to_open:
+            # CHANGEMENT : Dorénavant, grâce aux fonctions
+            # self.shw_info() et self.shw_debug(), on peut
+            # appeler edit_file_txt() même depuis __del__().
+            #
+            if log_to_open:
 
                 # On lance l'éditeur de texte afin que l'
                 # utilisateur puisse voir le fichier log.
@@ -2579,10 +2592,8 @@ class ScriptSkeleton:
         :param *args: tuple des fichiers à éditer.
         """
 
-        log = self.logItem
-
-        log.debug("Édition de fichier(s) TXT :")
-        log.debug('')
+        self.shw_debug('Édition de fichier(s) TXT :')
+        self.shw_debug('')
 
         # On retrouve l'éditeur de texte.
         #
@@ -2601,8 +2612,12 @@ class ScriptSkeleton:
                 #
                 command_line = [exe_txt_editor, file_to_edit]
 
-                log.debug("Fichier à traiter = %s", file_to_edit)
-                log.debug("Commande exécutée = %s", command_line)
+                self.shw_debug(
+                    f'Fichier à traiter = {file_to_edit}'
+                    )
+                self.shw_debug(
+                    f'Commande exécutée = {command_line}'
+                    )
 
                 if wait:
 
@@ -2618,7 +2633,7 @@ class ScriptSkeleton:
                     # sera achevée ( et donc on sera sûr que le PDF
                     # est bien présent... ).
                     #
-                    log.debug('... exécution SYNCHRONE.')
+                    self.shw_debug('... exécution SYNCHRONE.')
                     process = subprocess.run(command_line)
 
                 else:
@@ -2627,12 +2642,14 @@ class ScriptSkeleton:
                     # a lancé la conversion, sans se soucier de
                     # si elle est achevée ni comment...
                     #
-                    log.debug('... exécution ASYNCHRONE.')
+                    self.shw_debug('... exécution ASYNCHRONE.')
                     process = subprocess.Popen(command_line)
 
-                log.debug('')
-                log.debug('Code Retour : « %s ».', process.returncode)
-                log.debug('')
+                self.shw_debug('')
+                self.shw_debug(
+                    f'Code Retour : « {process.returncode} ».'
+                    )
+                self.shw_debug('')
 
 
     def compare_files(
