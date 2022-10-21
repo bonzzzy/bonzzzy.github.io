@@ -1191,7 +1191,10 @@ class ScriptSkeleton:
                 # On lance l'éditeur de texte afin que l'
                 # utilisateur puisse voir le fichier log.
                 #
-                self.edit_file_txt(False, self._logFile)
+                self.edit_file_txt(
+                    self._logFile,
+                    wait = False
+                    )
 
             # On libère le fichier LOG de sa fonction de
             # handler.
@@ -2472,18 +2475,18 @@ class ScriptSkeleton:
 
     def convert_to_pdf_run(
         self,
-        wait: bool = True,
-        *args
+        *args,
+        wait: bool = True
         ) -> bool:
         """ Conversion de fichier(s) DOCX ( ou ODT, TXT, etc )
         en fichier(s) PDF :
 
                 PHASE DE CONVERSION
 
+        :param *args: tuple des fichiers à convertir.
+
         :param wait: attend-t-on la fin de la conversion pour
         rendre la main à la fonction appelante ? ou pas...
-
-        :param *args: tuple des fichiers à convertir.
 
         :return: opération réussie ou non.
         """
@@ -2581,15 +2584,15 @@ class ScriptSkeleton:
 
     def edit_file_txt(
         self,
-        wait: bool = True,
-        *args
+        *args,
+        wait: bool = True
         ):
         """ Édition d'un ou plusieurs fichiers au format TXT.
 
+        :param *args: tuple des fichiers à éditer.
+
         :param wait: attend-t-on la fin de l'édition pour
         rendre la main à la fonction appelante ? ou pas...
-
-        :param *args: tuple des fichiers à éditer.
         """
 
         self.shw_debug('Édition de fichier(s) TXT :')
@@ -2621,9 +2624,8 @@ class ScriptSkeleton:
 
                 if wait:
 
-                    # Il est ici demandé que convert_to_pdf_run()
-                    # garde la main tant que la conversion n'est
-                    # achevée.
+                    # Il est demandé que edit_file_txt() garde la
+                    # main tant que la conversion n'est achevée.
                     #
                     # J'utilise donc run() et non Popen(), car c'
                     # est ainsi ce que LibreOffice va faire.
@@ -2654,21 +2656,23 @@ class ScriptSkeleton:
 
     def compare_files(
         self,
-        txt_compare: bool = True,
-        operation_wanted: str = 'difference',
-        *args
+        *args,
+        action: str = 'difference',
+        txt_compare: bool = True
         ) -> set:
         """ Comparaison de 2 ou plusieurs fichiers.
 
-        :param txt_compare: faut-il comparer au format texte
-        ( par défaut ) ou au format binaire...
+        :param *args: tuple des fichiers à comparer.
 
-        :param operation_wanted: comment veut-on comparer ?
+        :param action: comment veut-on comparer ?
         ( le fichier figurant en 1er constitue la RÉFÉRENCE )
             . intersection,
             . difference ( par défaut ),
             . difference symétrique
             . union.
+
+        :param txt_compare: faut-il comparer au format texte
+        ( par défaut ) ou au format binaire...
 
         :return: le résultat de la comparaison.
         """
@@ -2688,20 +2692,20 @@ class ScriptSkeleton:
         with open(args[0], flag) as file1:
             with open(args[1], flag) as file2:
 
-                if operation_wanted == 'intersection':
+                if action == 'intersection':
                     # comparaison = set(file1).intersection(file2)
                     comparaison = set(file1) & set(file2)
                 
-                elif operation_wanted == 'difference':
+                elif action == 'difference':
                     # comparaison = set(file1).difference(file2)
                     comparaison = set(file1) - set(file2)
 
-                elif operation_wanted == 'difference symétrique':
+                elif action == 'difference symétrique':
                     # comparaison = set(file1)
                     #                .symmetric_difference(file2)
                     comparaison = set(file1) ^ set(file2)
 
-                elif operation_wanted == 'union':
+                elif action == 'union':
                     # comparaison = set(file1).union(file2)
                     comparaison = set(file1) | set(file2)
 
@@ -3292,7 +3296,7 @@ if __name__ == "__main__":
                     "purus. Curabitur eu amet.\n"
                     '\n')
 
-            my_skeleton.convert_to_pdf_run(False, f_name)
+            my_skeleton.convert_to_pdf_run(f_name, wait = False)
 
             _show_('Fichier converti : ' + f_name, log)
 
@@ -3414,10 +3418,9 @@ if __name__ == "__main__":
         _show_('«', log)
  
         intersection = my_skeleton.compare_files(
-            True,
-            'intersection',
             f_reference,
-            f_transformation
+            f_transformation,
+            action = 'intersection'
             )
 
         for elt in intersection:
@@ -3434,10 +3437,9 @@ if __name__ == "__main__":
         _show_('«', log)
 
         difference = my_skeleton.compare_files(
-            True,
-            'difference',
             f_reference,
-            f_transformation
+            f_transformation,
+            action = 'difference'
             )
 
         for elt in difference:
@@ -3457,10 +3459,9 @@ if __name__ == "__main__":
         _show_('«', log)
  
         ajouts = my_skeleton.compare_files(
-            True,
-            'difference',
             f_transformation,
-            f_reference
+            f_reference,
+            action = 'difference'
             )
 
         for elt in ajouts:
@@ -3477,10 +3478,9 @@ if __name__ == "__main__":
         _show_('«', log)
  
         intersection = my_skeleton.compare_files(
-            True,
-            'difference symétrique',
             f_reference,
-            f_transformation
+            f_transformation,
+            action = 'difference symétrique'
             )
 
         for elt in intersection:
