@@ -16,12 +16,11 @@ url_base = "https://bonzzzy.github.io/"
 
 if __name__ == "__main__":
 
-    skeleton.___debug___ = ___debug___
-
     _my_skeleton = skeleton.ScriptSkeleton(
         module_name = "Import using GitHub",
         module_file = __file__,
-        arguments = sys.argv
+        arguments = sys.argv,
+        debug_mode = ___debug___
         )
 
     _my_log = _my_skeleton.logItem
