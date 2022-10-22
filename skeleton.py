@@ -105,10 +105,11 @@ from socket import timeout
 #   ( in autotests )    . def search_files_from_a_mask
 #   ( in autotests )    . def convert_to_pdf_init
 #   ( in autotests )    . def convert_to_pdf_run
-#                       . def edit_file_txt
+#   ( in autotests )    . def edit_file_txt
 #   ( in autotests )    . def compare_files
 #   ( in autotests )    . def get_unused_filename
 #                       . def save_strings_to_file
+#
 # ===========================================================================
 #
 #   - Fonctions spécifiques au WEB ( browser, HTML, HTTP, etc ) :
@@ -167,6 +168,16 @@ yes_or_no = {
 # de « bytes » ( codage sous forme octale ), on code
 # ceci par « None ».
 #
+# ATTENTION : Ce script s'attend à ce que « None »
+# soit la valeur de l'encodage en « byte strings ».
+#
+#       Des tests type « if ... is None » sont ainsi
+#       codés dans ce script !!!
+#
+#       La valeur « coding_bytes » ci-dessous ne doit
+#       donc pas être modifiée & est donnée simplement
+#       ci-dessous pour mémoire !!!
+#
 # ATTENTION : Il serait possible de mettre « None »
 # pour toutes les valeurs puisque :
 #
@@ -208,16 +219,6 @@ yes_or_no = {
 #
 coding_unknown = '?'
 coding_default = 'UTF-8'
-
-# ATTENTION : Ce script s'attend à ce que « None »
-# soit la valeur de l'encodage en « byte strings ».
-#
-# Des tests type « if ... is None » sont ainsi codés
-# dans ce script !!!
-#
-# La valeur ci-dessous ne doit donc pas être modifiée
-# et est ici donnée simplement pour mémoire !!!
-#
 coding_bytes = None
 
 filetype_to_coding = {
@@ -227,7 +228,7 @@ filetype_to_coding = {
 }
 
 
-# Fonctions d'affichages.
+# Fonction d'affichage.
 #
 def _show_(msg, journal):
     """ Pour afficher un msg, tout en le journalisant en
@@ -237,14 +238,6 @@ def _show_(msg, journal):
     print(msg)
     if journal is not None:
         journal.debug(msg)
-
-
-def _warn_(msg):
-    """ Pour n'afficher certains messages qu'en mode DEBUG.
-    """
-
-    if ___debug___:
-        print(msg)
 
 
 # Notre classe principale ScriptSkeleton.
@@ -259,10 +252,27 @@ class ScriptSkeleton:
         self,
         module_name: str = None,
         module_file: str = __file__,
-        arguments: list = None
+        arguments: list = None,
+        debug_mode: bool = ___debug___
         ):
         """
+        :param module_name:
+
+        :param module_file: nom du fichier appelant ( sa valeur
+        de __file__ en général ).
+
+        :param arguments: les arguments avec lesquels le module
+        principal qui nous appelle a lui-même été appelé ( i-e
+        sys.argv en général ).
+
+        :param debug_mode: ce « squelette » va-t-il s'exécuter
+        en mode DEBUG ( True or False ) ? Par défaut, il prend
+        le mode de ce script ( défini par ___debug___ )...
         """
+
+        # On personnalise notre mode de déboggage.
+        #
+        self._debug_ = debug_mode
 
         # Sommes-nous dans notre méthode __del__ ?
         #
@@ -305,7 +315,6 @@ class ScriptSkeleton:
         self.logItem = None
         self.logItem = self.on_ouvre_le_journal(module_name)
 
-
         # ATTENTION : Lorsque nous serons dans notre méthode __del__() et donc dans le
         # ramasse-miettes de Python = POTENTIELLEMENT, les objets LOG seront aussi en
         # train d’être détruits, voire l'auront déjà été... !!!
@@ -321,20 +330,27 @@ class ScriptSkeleton:
         #
         # Pour l'instant, notre LOG vient d'être créé, donc pas de souci !!!
         #
+        self.shw = lambda x: _show_(x, self.logItem)
         self.shw_info = lambda x: self.logItem.info(x)
         self.shw_debug = lambda x: self.logItem.debug(x)
         #
         # Dans notre méthode __del__(), nous attribuerons d'autres valeurs à self.shw_info
-        # et ) self.shw_debug.
+        # et à self.shw_debug.
         #
         # Par ailleurs, ces 2 fonctions sont ( actuellement ) utilisées seulement dans nos
         # méthodes invoquées directement ou indirectement depuis notre méthode __del__()
         # i.e :
         #
         #       - on_dit_au_revoir()
+        #       - on_sonne_le_reveil()
         #       - edit_file_txt()
         #       - get_paths_and_miscellaneous()
 
+        if self._debug_:
+
+            # On affiche notre mode de déboggage quand il est actif.
+            #
+            self.debug_mode(True)
 
         # Le dictionnaire « paths_and_miscellaneous » contiendra la liste des fichiers
         # & répertoires utiles, i-e il contiendra à minima les entrées suivantes :
@@ -382,7 +398,7 @@ class ScriptSkeleton:
         # fin de script !!!
         #
         self.shw_info = lambda x: print(x)
-        self.shw_debug = lambda x: _warn_(x)
+        self.shw_debug = lambda x: print(x) if self._debug_ else None
 
         # On quitte l'application...
         #
@@ -509,7 +525,7 @@ class ScriptSkeleton:
     def set_paths_and_miscellaneous(
         self,
         directory: str = '',
-        print_configuration: bool = ___debug___
+        print_configuration: bool = None
         ) -> str:
         """ Définitions des différents exécutables dont se sert ce script.
     
@@ -524,6 +540,44 @@ class ScriptSkeleton:
         """
 
         log = self.logItem
+
+        # ATTENTION : PERSONNALISATION de notre mode DEBUG
+        # -----------
+        # Si aucune valeur ne nous est précisée pour l'affichage
+        # ou pas de la configuration, nous faisons en fonction de
+        # notre propre mode de déboggage...
+        #
+        # Nous sommes obligé de faire ainsi car la déclaration de
+        # set_paths_and_miscellaneous() ne peut prendre la forme :
+        #
+        #   def set_paths_and_miscellaneous(
+        #       self,
+        #       directory: str = '',
+        #       print_configuration: bool = self.debug
+        #       ) -> str:
+        #
+        # ... c'est une syntaxe que Python n'autorise pas d'indiquer
+        # comme valeur par défaut, une valeur ( self.debug ) extraite
+        # de l'un même des autres paramètres ( self ).
+        #
+        # Si nous n'avions qu'un seul mode DEBUG pour l'entièreté de
+        # notre script, et non un mode DEBUG pour chacun des objets
+        # ScriptSkeleton, nous aurions pu écrire plus simplement :
+        #
+        #   def set_paths_and_miscellaneous(
+        #       self,
+        #       directory: str = '',
+        #       print_configuration: bool = ___debug___
+        #       ) -> str:
+        #
+        # ... mais chacun de ces objets à son propre mode !!!
+        #
+        # Donc nous sommes obligés de donner la valeur « None » dans
+        # la définition de fonction au booléen en question, puis de
+        # tester ici si cette valeur est à None ou pas.
+        #
+        if print_configuration is None:
+            print_configuration = self._debug_
 
         # Où sommes-nous ?
         #
@@ -890,8 +944,8 @@ class ScriptSkeleton:
         self,
         log_name,
         directory: str = '',
-        also_on_screen: bool = ___debug___,
-        warning_on_reopen: bool = ___debug___
+        also_on_screen: bool = None,
+        warning_on_reopen: bool = None
         ) -> logging.Logger:
         """ Pour initialiser la journalisation des messages dans un fichier,
             voire également à l'écran.
@@ -924,6 +978,17 @@ class ScriptSkeleton:
         ou que, ayant déjà été créé, on renvoie à nouveau le même.
         """
 
+        # On définit nos paramètres en fonction de notre mode de DEBUG personnel.
+        # ( cf ci-dessus « ATTENTION : PERSONNALISATION de notre mode DEBUG » )
+        #
+        if also_on_screen is None:
+            also_on_screen = self._debug_
+
+        if warning_on_reopen is None:
+            warning_on_reopen = self._debug_
+
+        # On crée l'objet JOURNAL si besoin.
+        #
         if self.logItem is None:
 
             # Création de l'objet logger qui va nous servir à écrire dans les logs.
@@ -938,8 +1003,10 @@ class ScriptSkeleton:
             # Création d'un formateur qui va ajouter le temps, le niveau
             # de chaque message quand on écrira un message dans le log.
             #
-            file_format = logging.Formatter(fmt='%(asctime)s - %(levelname)-9s %(message)s',
-                                            datefmt='%d-%m %H:%M:%S')
+            file_format = logging.Formatter(
+                fmt = '%(asctime)s - %(levelname)-9s %(message)s',
+                datefmt = '%d-%m %H:%M:%S'
+                )
 
             # Création d'un fichier temporaire qui va nous servir d
             # journal d'exécution.
@@ -949,17 +1016,24 @@ class ScriptSkeleton:
                 directory = os.getcwd()
 
             file_prefix = '#_LOG_for_' + log_name + '_#_'
-            file_object = tempfile.NamedTemporaryFile(mode='w+t',
-                                                      encoding='utf-8',
-                                                      prefix=file_prefix,
-                                                      suffix='.log',
-                                                      dir=directory,
-                                                      delete=False)
+            file_object = tempfile.NamedTemporaryFile(
+                mode = 'w+t',
+                encoding = 'utf-8',
+                prefix = file_prefix,
+                suffix = '.log',
+                dir = directory,
+                delete = False
+                )
 
             # Création d'un handler qui va rediriger une écriture du log vers
             # un fichier en mode 'append', avec 1 backup et une taille max de 1Mo.
             #
-            file_handler = logging.handlers.RotatingFileHandler(file_object.name, 'a', 1000000, 1)
+            file_handler = logging.handlers.RotatingFileHandler(
+                file_object.name,
+                'a',
+                1000000,
+                1
+                )
 
             # On met le niveau du handler fichier sur DEBUG, on lui dit qu'il doit
             # utiliser le formateur créé précédement et on ajoute ce handler au
@@ -995,12 +1069,6 @@ class ScriptSkeleton:
                 file_object.name
                 )
             journal.info('')
-
-            if ___debug___:
-
-                # On affiche notre mode de déboggage quand il est actif.
-                #
-                self.debug_mode(True)
 
         else:
 
@@ -1107,25 +1175,23 @@ class ScriptSkeleton:
         le stopper.
         """
 
-        log = self.logItem
-
-        ___debug___ = state
+        self._debug_ = state
 
         action = 'start' if state else 'stop'
         deco = 33 * '#'
         msg = deco + ' Mode DEBUG ( ' + action + ' ) ' + deco
 
-        _show_('#' * len(msg), log)
-        _show_(msg, log)
-        _show_('#' * len(msg), log)
-        _show_('', log)
+        self.shw('#' * len(msg))
+        self.shw(msg)
+        self.shw('#' * len(msg))
+        self.shw('')
 
 
     def on_dit_au_revoir(
         self,
-        log_to_open: bool = ___debug___,
-        log_to_remove: bool = not ___debug___,
-        pause_to_make: bool = ___debug___
+        log_to_open: bool = None,
+        log_to_remove: bool = None,
+        pause_to_make: bool = None
         ):
         """ Fonction a appeler avant de quitter ce module. Elle permet
         essentiellement de lancer l'affichage du fichier de LOG... et
@@ -1142,6 +1208,18 @@ class ScriptSkeleton:
 
         :return:
         """
+
+        # On définit nos paramètres en fonction de notre mode de DEBUG personnel.
+        # ( cf ci-dessus « ATTENTION : PERSONNALISATION de notre mode DEBUG » )
+        #
+        if log_to_open is None:
+            log_to_open = self._debug_
+
+        if log_to_remove is None:
+            log_to_remove = not self._debug_
+
+        if pause_to_make is None:
+            pause_to_make = self._debug_
 
         # Pour ne pas dire 2 fois au revoir, ni détruire 2 fois
         # le fichier LOG...
@@ -1162,7 +1240,7 @@ class ScriptSkeleton:
             # du module n’a pas appeler on_dit_aurevoir(), comme
             # il le devrait...
             #
-            _warn_('Nous avons déjà dit au revoir...')
+            self.shw_debug('Nous avons déjà dit au revoir...')
 
         else:
 
@@ -1250,15 +1328,15 @@ class ScriptSkeleton:
                 # donc nous laissons quoi qu'il arrive le
                 # LOG, afin qu'il puisse être examiné.
                 #
-                _warn_('PS: Je ne détruis pas le LOG')
-                _warn_('')
+                self.shw_debug('PS: Je ne détruis pas le LOG')
+                self.shw_debug('')
 
                 # Nous sommes sous IDLE donc nous affichons
                 # seulement un message avant de rendre la
                 # main à cette console.
                 #
-                _warn_('... et je rends la main à IDLE.')
-                _warn_('')
+                self.shw_debug('... et je rends la main à IDLE.')
+                self.shw_debug('')
 
                 # Sous IDLE, l'instruction « exit() » ci-
                 # dessous aurait aussi tué IDLE... !!!
@@ -1278,8 +1356,8 @@ class ScriptSkeleton:
                     self._logFile
                     ):
 
-                    _warn_('Destruction du LOG.')
-                    _warn_('')
+                    self.shw_debug('Destruction du LOG.')
+                    self.shw_debug('')
 
                 # Nous ne sommes pas sous IDLE, donc nous
                 # marquons une pause afin que la fenêtre
@@ -1298,14 +1376,18 @@ class ScriptSkeleton:
 
                     os.remove(self._logFile)
 
-                _warn_('FIN DU SCRIPT')
-                _warn_('')
+                self.shw_debug('FIN DU SCRIPT')
+                self.shw_debug('')
 
                 if self._we_are_inside_del_method:
 
-                    _warn_('Nous nous AUTO-DÉTRUISONS ( __del__ ).')
-                    _warn_('Pas de « exit() » lancé : sinon cela bug !')
-                    _warn_('')
+                    self.shw_debug(
+                        'Nous nous AUTO-DÉTRUISONS ( __del__ ).'
+                        )
+                    self.shw_debug(
+                        'Pas de « exit() » lancé : sinon cela bug !'
+                        )
+                    self.shw_debug('')
 
                     # Nous sommes dans la méthode __del__, nous
                     # ne pouvons lancer le « exit() » de fin.
@@ -1337,8 +1419,8 @@ class ScriptSkeleton:
 
                 else:
 
-                    _warn_("Ciel ! On m'a tué...")
-                    _warn_('')
+                    self.shw_debug("Ciel ! On m'a tué...")
+                    self.shw_debug('')
 
                     # Finalement, ici aussi nous n'exécutons plus
                     # l'instruction « exit() » ci-dessous...
@@ -1457,11 +1539,11 @@ class ScriptSkeleton:
             else:
                 command_line.append(played)
 
-            _warn_('Player\t= ' + str(player))
-            _warn_('Played\t= ' + str(played))
-            _warn_('Args\t= ' + str(args))
-            _warn_('liste?\t= ' + str(isinstance(args, list)))
-            _warn_('')
+            self.shw_debug('Player\t= ' + str(player))
+            self.shw_debug('Played\t= ' + str(played))
+            self.shw_debug('Args\t= ' + str(args))
+            self.shw_debug('liste?\t= ' + str(isinstance(args, list)))
+            self.shw_debug('')
 
             log.debug("Commande exécutée = %s", command_line)
 
@@ -1569,8 +1651,8 @@ class ScriptSkeleton:
                     log.debug("... on va dormir AVANT la demande d'hibernation.")
                     log.debug('')
 
-                    _show_("J'attends...", log)
-                    _show_('', log)
+                    self.shw("J'attends...")
+                    self.shw('')
 
                     try:
                         time.sleep(delai_9mn33_en_secondes)
@@ -1683,7 +1765,7 @@ class ScriptSkeleton:
         retries: int = 3,
         reminder: str = 'Please try again !',
         raise_on_retry_error: bool = False,
-        play_sound: bool = ___debug___
+        play_sound: bool = None
         ) -> bool:
         """
 
@@ -1709,19 +1791,34 @@ class ScriptSkeleton:
         :return: YES ( True ) or FALSE ( No ).
         """
 
-        log = self.logItem
+        # On définit nos paramètres en fonction de notre mode de DEBUG personnel.
+        # ( cf ci-dessus « ATTENTION : PERSONNALISATION de notre mode DEBUG » )
+        #
+        if play_sound is None:
+            play_sound = self._debug_
 
+        # On sonne le réveil si désiré.
+        #
         if play_sound:
             self.on_sonne_le_reveil()
 
+        # On vérifie si nous connaissons la liste des façons de dire OUI ou NON
+        # dans le langage désiré de la réponse.
+        #
+        # Si le langage n'est pas référencé, nous présupposons l'anglais.
+        #
         if langage in yes_or_no.keys():
             our_yes_or_no = yes_or_no[langage]
 
         else:
             our_yes_or_no = yes_or_no['eng']
-            _show_('Unknown language... Using english...', log)
-            _show_('', log)
+            self.shw('Unknown language... Using english...')
+            self.shw('')
 
+        # On vérifie la validité de la réponse par défaut.
+        #
+        # On affiche cette valeur par défaut en conséquence.
+        #
         if default is not None:
             default = default.strip(whitespace)
 
@@ -1739,6 +1836,9 @@ class ScriptSkeleton:
             else:
                 raise AssertionError('Incorrect default value !!!')
 
+        # On initialise la liste des OUI & NON acceptés.
+        # ( en fonction du langage qui a été fixé ).
+        #
         our_yes = []
         our_no = []
 
@@ -1750,6 +1850,8 @@ class ScriptSkeleton:
             else:
                 our_no.append(key)
 
+        # On attend & on traite la réponse de l'utilisateur.
+        #
         while True:
 
             answer = input(prompt)
@@ -1769,8 +1871,8 @@ class ScriptSkeleton:
                     raise ValueError('Too much retry...')
 
                 elif dflt_valid:
-                    _show_('Too much retry... Using default !', log)
-                    _show_('', log)
+                    self.shw('Too much retry... Using default !')
+                    self.shw('')
                     return our_yes_or_no[default]
 
                 else:
@@ -1778,10 +1880,10 @@ class ScriptSkeleton:
                         'Too much retry... And no default value !'
                         )
 
-            _show_(reminder, log)
-            _show_('OK = ' + str(our_yes), log)
-            _show_('NO = ' + str(our_no), log)
-            _show_('', log)
+            self.shw(reminder)
+            self.shw('OK = ' + str(our_yes))
+            self.shw('NO = ' + str(our_no))
+            self.shw('')
 
 
     def choose_in_a_list(
@@ -1838,15 +1940,15 @@ class ScriptSkeleton:
         # choix.
         #
         else:
-            _show_('Veuillez choisir parmis les réponses suivantes :', log)
-            _show_('', log)
+            self.shw('Veuillez choisir parmi les réponses suivantes :')
+            self.shw('')
 
             # // TODO : Il serait bon ici de limiter le nombre de réponses affichées
             # et ceci au cas où la LISTE SERAIT TROP LONGUE. Reste à trouver comment...
             #
             for index, an_answer in enumerate(list_of_choices, start=0):
-                _show_(str(index).rjust(3) + ' - ' + an_answer, log)
-            _show_('', log)
+                self.shw(str(index).rjust(3) + ' - ' + an_answer)
+            self.shw('')
 
             # On demande son choix à l'utilisateur, i-e le n° de la réponse dans la
             # liste affichée.
@@ -1947,22 +2049,21 @@ class ScriptSkeleton:
         # choix.
         #
         else:
-            _show_('Veuillez choisir parmis les réponses suivantes :', log)
-            _show_('', log)
+            self.shw('Veuillez choisir parmi les réponses suivantes :')
+            self.shw('')
 
             # // TODO : Il serait bon ici de limiter le nombre de réponses affichées
             # et ceci au cas où la LISTE SERAIT TROP LONGUE. Reste à trouver comment...
             #
             for idx, item in enumerate(sorted(dict_of_choices.items()), start=0):
-                _show_(
+                self.shw(
                     str(idx).rjust(3) \
                     + ' - ' \
                     + str(item[0]).rjust(6) \
                     + ' = ' \
-                    + item[1],
-                    log
+                    + item[1]
                     )
-            _show_('', log)
+            self.shw('')
 
             # On demande son choix à l'utilisateur, i-e le n° de la réponse dans la
             # liste affichée.
@@ -2914,9 +3015,9 @@ class ScriptSkeleton:
         log.debug('Format en sortie = « %s »', flag)
         log.debug('')
 
-        _show_('Destination = ' + file_dst, log)
-        _warn_('Format = « ' + flag + ' »')
-        _show_('', log)
+        self.shw('Destination = ' + file_dst)
+        self.shw_debug('Format = « ' + flag + ' »')
+        self.shw('')
 
         with open(file_dst, flag) as new_file:
 
@@ -2986,9 +3087,9 @@ class ScriptSkeleton:
         url_string = ''
 
         url_valid = self.url_to_valid(url)
-        _show_('URL get = ' + url, log)
-        _show_('URL ok  = ' + url_valid, log)
-        _show_('', log)
+        self.shw('URL get = ' + url)
+        self.shw('URL ok  = ' + url_valid)
+        self.shw('')
 
         try:
 
@@ -3005,47 +3106,40 @@ class ScriptSkeleton:
                 url_coding = data.headers.get_content_charset()
 
         except InvalidURL as error:
-            _show_('===>> InvalidURL = ' \
-                + str(error),
-                log
+            self.shw('===>> InvalidURL = ' \
+                + str(error)
                 )
-            _show_('', log)
+            self.shw('')
 
         except NotConnected as error:
-            _show_('===>> NotConnected = ' \
-                + str(error),
-                log
+            self.shw('===>> NotConnected = ' \
+                + str(error)
                 )
-            _show_('', log)
+            self.shw('')
 
         except TimeoutError:
-            _show_('===>> Request timed out...',
-                log)
-            _show_('', log)
+            self.shw('===>> Request timed out...')
+            self.shw('')
 
         except HTTPError as error:
-            _show_('===>> HTTP ' \
+            self.shw('===>> HTTP ' \
                 + str(error.status) \
                 + ' ERROR = ' \
-                + str(error.reason),
-                log
+                + str(error.reason)
                 )
-            _show_('', log)
+            self.shw('')
 
         except URLError as error:
 
             if isinstance(error.reason, timeout):
-                _show_('===>> Socket timeout error...',
-                    log
-                    )
+                self.shw('===>> Socket timeout error...')
 
             else:
-                _show_('===>> URLError = ' \
-                    + str(error.reason),
-                    log
+                self.shw('===>> URLError = ' \
+                    + str(error.reason)
                     )
 
-            _show_('', log)
+            self.shw('')
 
         else:
 
@@ -3053,10 +3147,7 @@ class ScriptSkeleton:
             log.debug(url_bytes[0:99])
             log.debug('')
 
-            _show_(
-                'Coding en entrée = « {0} »'.format(coding),
-                log
-                )
+            self.shw(f'Coding en entrée = « {coding} »')
 
             if coding == coding_unknown:
 
@@ -3076,11 +3167,8 @@ class ScriptSkeleton:
                 #
                 coding = url_coding
 
-            _show_(
-                'Coding calculé = « {0} »'.format(coding),
-                log
-                )
-            _show_('', log)
+            self.shw(f'Coding calculé = « {coding} »')
+            self.shw('')
 
             if coding is None:
 
@@ -3153,9 +3241,9 @@ if __name__ == "__main__":
         idx = my_skeleton.choose_in_a_list(fruits, 1)
 
         if idx >= 0:
-            _show_('Votre réponse = ' + fruits[idx], log)
+            my_skeleton.shw('Votre réponse = ' + fruits[idx])
 
-        _show_('', log)
+        my_skeleton.shw('')
 
         # On appelle choose_in_a_dict() pour vérifier
         # que Python ne plante pas en le parcourant.
@@ -3175,9 +3263,9 @@ if __name__ == "__main__":
         key = my_skeleton.choose_in_a_dict(capitals, 'India')
 
         if key is not None:
-            _show_('Votre réponse = ' + capitals[key], log)
+            my_skeleton.shw('Votre réponse = ' + capitals[key])
 
-        _show_('', log)
+        my_skeleton.shw('')
 
 
     # #######################################################################
@@ -3187,7 +3275,7 @@ if __name__ == "__main__":
     # #######################################################################
     #
     user_answer = my_skeleton.ask_yes_or_no(
-        "Voulez-vous que je réalise mes AUTOTESTS de RECHERCHE ?",
+        "Voulez-vous que je réalise mes AUTOTESTS de RECHERCHE de fichiers & ÉDITION format texte ?",
         'non'
         )
 
@@ -3209,13 +3297,32 @@ if __name__ == "__main__":
 
         log.debug('')
 
-        _show_('Fichier(s) trouvé(s) [ *.py ] :', log)
-        _show_('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~', log)
+        my_skeleton.shw('Fichier(s) trouvé(s) [ *.py ] :')
+        my_skeleton.shw('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
 
         for file_name in sorted(files_found):
-            _show_('\t' + file_name, log)
+            my_skeleton.shw('\t' + file_name)
 
-        _show_('', log)
+        my_skeleton.shw('')
+
+        user_answer = my_skeleton.ask_yes_or_no(
+            "Éditons-nous ces fichiers ( via notre éditeur de TXT ) ?",
+            'oui'
+            )
+
+        if user_answer:
+
+            log.info('')
+            log.info('\t===============================')
+            log.info('\t>>> TEST de edit_file_txt() <<<')
+            log.info('\t===============================')
+            log.info('')
+            log.info('')
+
+            my_skeleton.edit_file_txt(
+                *files_found,
+                wait = False
+                )
 
 
     # #######################################################################
@@ -3298,14 +3405,15 @@ if __name__ == "__main__":
                     "purus. Curabitur eu amet.\n"
                     '\n')
 
-            my_skeleton.convert_to_pdf_run(f_name, wait = False)
+            my_skeleton.convert_to_pdf_run(f_name, __file__, wait = False)
 
-            _show_('Fichier converti : ' + f_name, log)
+            my_skeleton.shw('Fichier converti : ' + f_name)
+            my_skeleton.shw('Fichier converti : ' + __file__)
 
         else:
-            _show_('Conversion PDF impossible sur ce terminal.', log)
+            my_skeleton.shw('Conversion PDF impossible sur ce terminal.')
 
-        _show_('', log)
+        my_skeleton.shw('')
 
 
     # #######################################################################
@@ -3414,10 +3522,10 @@ if __name__ == "__main__":
 
         # On compare les 2 fichiers : INTERSECTION.
         #
-        _show_('', log)
-        _show_("RÉSULTAT de l'INTERSECTION des deux FICHIERS :", log)
-        _show_('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~', log)
-        _show_('«', log)
+        my_skeleton.shw('')
+        my_skeleton.shw("RÉSULTAT de l'INTERSECTION des deux FICHIERS :")
+        my_skeleton.shw('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
+        my_skeleton.shw('«')
  
         intersection = my_skeleton.compare_files(
             f_reference,
@@ -3426,17 +3534,17 @@ if __name__ == "__main__":
             )
 
         for elt in intersection:
-            _show_(str(elt).rstrip('\r\n'), log)
-        _show_('»', log)
-        _show_('', log)
+            my_skeleton.shw(str(elt).rstrip('\r\n'))
+        my_skeleton.shw('»')
+        my_skeleton.shw('')
 
 
         # On compare les 2 fichiers : DIFFÉRENCE / au fichier référence.
         #
-        _show_('', log)
-        _show_('LIGNES de la RÉFÉRENCE NON PRÉSENTES dans le fichier transformé :', log)
-        _show_('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~', log)
-        _show_('«', log)
+        my_skeleton.shw('')
+        my_skeleton.shw('LIGNES de la RÉFÉRENCE NON PRÉSENTES dans le fichier transformé :')
+        my_skeleton.shw('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
+        my_skeleton.shw('«')
 
         difference = my_skeleton.compare_files(
             f_reference,
@@ -3445,9 +3553,9 @@ if __name__ == "__main__":
             )
 
         for elt in difference:
-            _show_(str(elt).rstrip('\r\n'), log)
-        _show_('»', log)
-        _show_('', log)
+            my_skeleton.shw(str(elt).rstrip('\r\n'))
+        my_skeleton.shw('»')
+        my_skeleton.shw('')
 
 
         # On compare les 2 fichiers : DIFFÉRENCE / au 2ème fichier.
@@ -3455,10 +3563,10 @@ if __name__ == "__main__":
         # C-a-d que l'on va ici donner les lignes en plus dans le
         # 2ème fichier...
         #
-        _show_('', log)
-        _show_('LIGNES AJOUTÉES / MODIFIÉES dans le FICHIER TRANSFORMÉ :', log)
-        _show_('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~', log)
-        _show_('«', log)
+        my_skeleton.shw('')
+        my_skeleton.shw('LIGNES AJOUTÉES / MODIFIÉES dans le FICHIER TRANSFORMÉ :')
+        my_skeleton.shw('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
+        my_skeleton.shw('«')
  
         ajouts = my_skeleton.compare_files(
             f_transformation,
@@ -3467,17 +3575,17 @@ if __name__ == "__main__":
             )
 
         for elt in ajouts:
-            _show_(str(elt).rstrip('\r\n'), log)
-        _show_('»', log)
-        _show_('', log)
+            my_skeleton.shw(str(elt).rstrip('\r\n'))
+        my_skeleton.shw('»')
+        my_skeleton.shw('')
 
 
         # On compare les 2 fichiers : DIFFÉRENCE SYMÉTRIQUE.
         #
-        _show_('', log)
-        _show_('RÉSULTAT de la DIFFÉRENCE SYMÉTRIQUE entre les deux FICHIERS :', log)
-        _show_('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~', log)
-        _show_('«', log)
+        my_skeleton.shw('')
+        my_skeleton.shw('RÉSULTAT de la DIFFÉRENCE SYMÉTRIQUE entre les deux FICHIERS :')
+        my_skeleton.shw('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
+        my_skeleton.shw('«')
  
         intersection = my_skeleton.compare_files(
             f_reference,
@@ -3486,9 +3594,9 @@ if __name__ == "__main__":
             )
 
         for elt in intersection:
-            _show_(str(elt).rstrip('\r\n'), log)
-        _show_('»', log)
-        _show_('', log)
+            my_skeleton.shw(str(elt).rstrip('\r\n'))
+        my_skeleton.shw('»')
+        my_skeleton.shw('')
 
 
     # #######################################################################
@@ -3516,49 +3624,39 @@ if __name__ == "__main__":
 
         f_name = it_begins_with + '.tmp'
 
-        _show_('Nom de référence = « {0} »'.format(
-            f_name),
-            log
-            )
-        _show_('', log)
+        my_skeleton.shw(f'Nom de référence = « {f_name} »')
+        my_skeleton.shw('')
 
         f_tmp = my_skeleton.get_unused_filename(
             f_name,
             idx_force = False
             )
 
-        _show_('Prochain nom disponible = « {0} »'.format(
-            f_tmp),
-            log
-            )
-        _show_('', log)
+        my_skeleton.shw(f'Prochain nom disponible = « {f_tmp} »')
+        my_skeleton.shw('')
 
-        _show_('Création de « {0} »'.format(
-            f_tmp),
-            log
-            )
-        _show_('', log)
+        my_skeleton.shw(f'Création de « {f_tmp} »')
+        my_skeleton.shw('')
 
         with open(f_tmp, "wt") as f_test:
             f_test.write('Dummy')
 
-        _show_('Prochain nom après « {0} » ...'.format(
-            f_tmp),
-            log
-            )
-        _show_('', log)
+        my_skeleton.shw('Prochain nom après « {f_tmp} » ...')
+        my_skeleton.shw('')
 
-        _show_('\t* sur 3 chiffres, base 0 : « {0} »'.format(
-            my_skeleton.get_unused_filename(f_name)),
-            log
+        my_skeleton.shw(
+            '\t* sur 3 chiffres, base 0 : « {0} »'.format(
+                my_skeleton.get_unused_filename(f_name)
+                )
             )
-        _show_('', log)
+        my_skeleton.shw('')
 
-        _show_('\t* sur 18 chiffres, base 33 : « {0} »'.format(
-            my_skeleton.get_unused_filename(f_name, 18, 33)),
-            log
+        my_skeleton.shw(
+            '\t* sur 18 chiffres, base 33 : « {0} »'.format(
+                my_skeleton.get_unused_filename(f_name, 18, 33)
+                )
             )
-        _show_('', log)
+        my_skeleton.shw('')
 
 
     # #######################################################################
@@ -3584,24 +3682,24 @@ if __name__ == "__main__":
         log.info('')
         log.info('')
 
-        _show_('SHUTDOWN « par défaut » ( rien )', log)
-        _show_('', log)
+        my_skeleton.shw('SHUTDOWN « par défaut » ( rien )')
+        my_skeleton.shw('')
 
         my_skeleton.shutdown_please()
 
-        _show_('', log)
-        _show_('SHUTDOWN « complet »', log)
-        _show_('', log)
+        my_skeleton.shw('')
+        my_skeleton.shw('SHUTDOWN « complet »')
+        my_skeleton.shw('')
 
         my_skeleton.shutdown_please(shutdown_complete)
 
-        _show_('', log)
-        _show_('SHUTDOWN « hibernation »', log)
-        _show_('', log)
+        my_skeleton.shw('')
+        my_skeleton.shw('SHUTDOWN « hibernation »')
+        my_skeleton.shw('')
 
         my_skeleton.shutdown_please(shutdown_hibernate)
 
-        _show_('', log)
+        my_skeleton.shw('')
 
 
     # #######################################################################
@@ -3656,8 +3754,8 @@ if __name__ == "__main__":
             input('Frapper <Entrée> une fois le son entendu...')
 
         else:
-            _show_('Certains fichiers demandés sont ABSENTS !!!', log)
-            _show_('', log)
+            my_skeleton.shw('Certains fichiers demandés sont ABSENTS !!!')
+            my_skeleton.shw('')
 
         # On restaure les vraies valeurs.
         #
@@ -3709,8 +3807,8 @@ if __name__ == "__main__":
         log.info('')
         log.info('')
 
-        _show_('Nous invoquons donc on_dit_au_revoir().', log)
-        _show_('', log)
+        my_skeleton.shw('Nous invoquons donc on_dit_au_revoir().')
+        my_skeleton.shw('')
 
         my_skeleton.on_dit_au_revoir()
 
@@ -3723,5 +3821,5 @@ if __name__ == "__main__":
         #
         # Elle-même appellera on_dit_au_revoir()
         #
-        _show_('On laisse donc le script le faire tout seul.', log)
-        _show_('', log)
+        my_skeleton.shw('On laisse donc le script le faire tout seul.')
+        my_skeleton.shw('')
