@@ -12,9 +12,9 @@
 #
 #       Cf https://docs.python.org/3/library/constants.html
 #
-___debug___ = True
+#___debug___ = True
 #___debug___ = False
-#___debug___ = __debug__
+___debug___ = __debug__
 
 
 import os
@@ -268,6 +268,9 @@ class ScriptSkeleton:
         :param debug_mode: ce « squelette » va-t-il s'exécuter
         en mode DEBUG ( True or False ) ? Par défaut, il prend
         le mode de ce script ( défini par ___debug___ )...
+        Un autre nom pour ce paramètre pourrait être :
+
+                VERBOSE = True / False...
         """
 
         # On personnalise notre mode de déboggage.
@@ -416,8 +419,8 @@ class ScriptSkeleton:
 
     def show_paths_and_miscellaneous(
         self,
-        printer, # function
-        jumper, # function
+        printer = print, # function
+        jumper = print, # function
         intro: str = None
         ):
         """ Pour "imprimer" ou sauvegarder le contenu de
@@ -445,16 +448,16 @@ class ScriptSkeleton:
             jumper()
 
         for key, value in self.paths_and_miscellaneous.items():
-            printer(str(key) + ' = ' + str(value))
+            printer(f'{key} = {value}')
 
         jumper()
 
 
     def check_paths_and_miscellaneous(
         self,
-        printer, # function
-        jumper, # function
-        alert # function
+        printer = print, # function
+        jumper = print, # function
+        alert = print # function
         ) -> bool:
         """ Pour vérifier que notre dictionnaire est correct.
 
@@ -497,9 +500,7 @@ class ScriptSkeleton:
 
                 if key_short in ('DIR_', 'EXE_', 'DLL_'):
 
-                    printer(
-                        "Test de l'existence de " + str(key) + '...'
-                        )
+                    printer(f"Test de l'existence de {key}...")
 
                 if key_short == 'DIR_' and not os.path.isdir(value):
                     name = 'répertoire'
@@ -514,8 +515,13 @@ class ScriptSkeleton:
 
                     no_error = False
 
-                    alert('Le ' + name + " suivant n'existe pas :")
-                    alert(' ' * 6 + str(value))
+                    alert(f"Le {name} suivant n'existe pas :")
+                    #
+                    # On impose une tabulation de 6 espaces car, suivant
+                    # les systèmes, \t ne représente pas toujours le même
+                    # nombre de ceux-ci...
+                    #
+                    alert(f"{'':>6}{value}")
 
                     jumper()
 
@@ -627,9 +633,8 @@ class ScriptSkeleton:
         # Sommes-nous 32 ou 64 bits ?
         #
         is_64bits = sys.maxsize > 2 ** 32
-        str_size = '64' if is_64bits else '32'
-        msg_architecture = 'ARCHITECTURE ' + str_size \
-                         + ' bits sur OS « ' + our_system + ' ».'
+        size = '64' if is_64bits else '32'
+        msg_architecture = f'ARCHITECTURE {size} bits sur OS « {our_system} ».'
 
         # On initialise le répertoire de travail de ce programme.
         #
@@ -671,7 +676,7 @@ class ScriptSkeleton:
 
             # On considère que LibreOffice est tjrs au même endroit...
             #
-            libre_office_dir = "C:\\Program Files\\LibreOffice\\program"
+            libre_office_dir = r"C:\Program Files\LibreOffice\program"
             libre_office_exec = os.path.join(libre_office_dir, "soffice.exe")
             libre_writer_exec = os.path.join(libre_office_dir, "swriter.exe")
 
@@ -691,21 +696,21 @@ class ScriptSkeleton:
                 # On liste ici les différents répertoires possibles, par ordre
                 # de la version la plus récente ( préférée ) à la plus ancienne.
                 #
-                'C:\\Program Files\\Just Great Software\\EditPad Pro',
-                'C:\\Program Files\\EditPad Pro',
-                'C:\\Program Files\\EditPadPro',
-                'C:\\Program Files\\Just Great Software\\EditPad Pro 8',
-                'C:\\Program Files\\EditPad Pro 8',
-                'C:\\Program Files\\EditPadPro8',
-                'C:\\Program Files\\Just Great Software\\EditPad Pro 7',
-                'C:\\Program Files\\EditPad Pro 7',
-                'C:\\Program Files\\EditPadPro7',
-                'C:\\Program Files\\Just Great Software\\EditPad Pro 6',
-                'C:\\Program Files\\EditPad Pro 6',
-                'C:\\Program Files\\EditPadPro6',
-                'C:\\Program Files\\Just Great Software\\EditPad Pro 5',
-                'C:\\Program Files\\EditPad Pro 5',
-                'C:\\Program Files\\EditPadPro5'
+                r'C:\Program Files\Just Great Software\EditPad Pro',
+                r'C:\Program Files\EditPad Pro',
+                r'C:\Program Files\EditPadPro',
+                r'C:\Program Files\Just Great Software\EditPad Pro 8',
+                r'C:\Program Files\EditPad Pro 8',
+                r'C:\Program Files\EditPadPro8',
+                r'C:\Program Files\Just Great Software\EditPad Pro 7',
+                r'C:\Program Files\EditPad Pro 7',
+                r'C:\Program Files\EditPadPro7',
+                r'C:\Program Files\Just Great Software\EditPad Pro 6',
+                r'C:\Program Files\EditPad Pro 6',
+                r'C:\Program Files\EditPadPro6',
+                r'C:\Program Files\Just Great Software\EditPad Pro 5',
+                r'C:\Program Files\EditPad Pro 5',
+                r'C:\Program Files\EditPadPro5'
             ]
 
             editpad_exe_list = [
@@ -801,7 +806,7 @@ class ScriptSkeleton:
             #
             # ... car :
             #
-            #   1 - Cela faisait planter le script dans ce cas, i-e en fin
+            #   - Cela faisait planter le script dans ce cas, i-e en fin
             # de script, lorsque l'on passait dans notre méthode __del__,
             # celle-ci apelait « self.on_dit_au_revoir() », qui elle-même
             # lançait « self.edit_file_txt() », qui elle-même invoquait :
@@ -913,17 +918,18 @@ class ScriptSkeleton:
                 # Si l'index n'a pas été trouvé, ou que la valeur dans
                 # le dictionnaire est None, alors on informe.
                 #
-                msg = '« {0} » est inconnu'.format(index)
+                msg = f'« {index} » est inconnu'
 
                 if 'working_SYSTEM' in keys and 'working_MACHINE_TYPE' in keys:
 
-                    msg = msg + ' sur {0} et {1}.'.format(
+                    msg = '{} sur {} et {}.'.format(
+                        msg,
                         self.paths_and_miscellaneous['working_SYSTEM'],
                         self.paths_and_miscellaneous['working_MACHINE_TYPE']
                         )
 
                 else:
-                    msg = msg + ' sur {0}.'.format(os.name.upper())
+                    msg = f'{msg} sur {os.name.upper()}.'
 
                 self.shw_debug(msg)
                 self.shw_debug('')
@@ -1015,7 +1021,7 @@ class ScriptSkeleton:
         
                 directory = os.getcwd()
 
-            file_prefix = '#_LOG_for_' + log_name + '_#_'
+            file_prefix = f'#_LOG_for_{log_name}_#_'
             file_object = tempfile.NamedTemporaryFile(
                 mode = 'w+t',
                 encoding = 'utf-8',
@@ -1178,8 +1184,8 @@ class ScriptSkeleton:
         self._debug_ = state
 
         action = 'start' if state else 'stop'
-        deco = 33 * '#'
-        msg = deco + ' Mode DEBUG ( ' + action + ' ) ' + deco
+        deco = 22 * '#'
+        msg = f'{deco} Mode DEBUG ( {action} ) {deco}'
 
         self.shw('#' * len(msg))
         self.shw(msg)
@@ -1328,14 +1334,32 @@ class ScriptSkeleton:
                 # donc nous laissons quoi qu'il arrive le
                 # LOG, afin qu'il puisse être examiné.
                 #
-                self.shw_debug('PS: Je ne détruis pas le LOG')
-                self.shw_debug('')
+                # ATTENTION : Finalement, même sous IDLE, on
+                # détruit le fichier LOG si telle est le choix
+                # de l'utilisateur. En effet, même s'il s'agit
+                # de phases de mises au point, on peut avoir
+                # envie de détruire le LOG car il ne va rien
+                # nous apporter et que l'on devra le détruire
+                # à chaque nouvelle exécution...
+                #
+                #   self.shw_debug('PS: Je ne détruis pas le LOG')
+                #   self.shw_debug('')
+                #
+                if log_to_remove and os.path.isfile(
+                    self._logFile
+                    ):
+
+                    self.shw_debug('Destruction du LOG même sous IDLE.')
+                    self.shw_debug('')
+                    os.remove(self._logFile)
 
                 # Nous sommes sous IDLE donc nous affichons
                 # seulement un message avant de rendre la
                 # main à cette console.
                 #
-                self.shw_debug('... et je rends la main à IDLE.')
+                #   self.shw_debug('... et je rends la main à IDLE.')
+                #
+                self.shw_debug('Puis je rends la main à IDLE.')
                 self.shw_debug('')
 
                 # Sous IDLE, l'instruction « exit() » ci-
@@ -1516,20 +1540,44 @@ class ScriptSkeleton:
             # le son est réglable et que cela marche sur un PC de
             # bureau comme sur un portable...
             #
-            command_line = [player]
+            cmd_line = [player]
 
             args = self.get_paths_and_miscellaneous('ARG_player')
 
             if args is None:
                 pass
 
-            elif isinstance(args, list):
+            elif type(args) in (list, tuple):
 
-                for arg in args:
-                    command_line.append(arg)
+                cmd_line += args
+                #cmd_line += list(args)
+                #
+                # Si "args" est un tuple :
+                #
+                #   cmd_line += args
+                #
+                # ... est compris par Python.
+                #
+                # Par contre, dans ce même cas :
+                #
+                #   cmd_line = cmd_line + args
+                #
+                # ... provequera une exception !!!
+                #
+                #   >>> args=('-f', 456,'param', 56)
+                #   >>> cmd = ['player']
+                #   >>> cmd = cmd + args
+                #   Traceback (most recent call last):
+                #     File "<pyshell#2>", line 1, in <module>
+                #       cmd = cmd + args
+                #   TypeError: can only concatenate list (not "tuple") to list
+                #   >>> cmd += args
+                #   >>> cmd
+                #   ['player', '-f', 456, 'param', 56]
+                #
 
             else:
-                command_line.append(args)
+                cmd_line.append(args)
 
             played = self.get_paths_and_miscellaneous('EXE_played')
 
@@ -1537,17 +1585,17 @@ class ScriptSkeleton:
                 pass
 
             else:
-                command_line.append(played)
+                cmd_line.append(played)
 
-            self.shw_debug('Player\t= ' + str(player))
-            self.shw_debug('Played\t= ' + str(played))
-            self.shw_debug('Args\t= ' + str(args))
-            self.shw_debug('liste?\t= ' + str(isinstance(args, list)))
+            self.shw_debug(f'Player\t= {player}')
+            self.shw_debug(f'Played\t= {played}')
+            self.shw_debug(f'Args  \t= {args}')
+            self.shw_debug(f'liste?\t= {isinstance(args, list)}')
             self.shw_debug('')
 
-            log.debug("Commande exécutée = %s", command_line)
+            log.debug("Commande exécutée = %s", cmd_line)
 
-            process = subprocess.Popen(command_line)
+            process = subprocess.Popen(cmd_line)
             log.debug('Code Retour : « %s ».', process.returncode)
             log.debug('')
 
@@ -1596,10 +1644,15 @@ class ScriptSkeleton:
             how_lower = how.lower()
 
             if how_lower == shutdown_complete:
+
                 # On demande l'arrêt total de la machine dans 9 mn.
                 #
-                command_line = ['shutdown', '-s', '-f',
-                                '-t', str(delai_9mn33_en_secondes)]
+                command_line = [
+                    'shutdown',
+                    '-s',
+                    '-f',
+                    '-t', str(delai_9mn33_en_secondes)
+                    ]
 
                 # La temporisation est incluse dans la commande
                 # ci-dessus, donc pas besoin que nous la prenions
@@ -1608,6 +1661,7 @@ class ScriptSkeleton:
                 delay_performed_by_system = True
 
             elif how_lower == shutdown_hibernate:
+
                 # On demande l'hibernation de la machine après une
                 # temporisation.
                 #
@@ -1760,12 +1814,36 @@ class ScriptSkeleton:
     def ask_yes_or_no(
         self,
         prompt: str,
-        default: str = None,
+        #
+        default = None, # Type = BOOL ou STR
+        #default: str = None,
+        #
+        # Permettre que default soit une string OU un booléen ?
+        # Afin que la fonction puisse tout simplement retourner
+        # « default », sans avoir à chercher sa correspondance
+        # dans le dictionnaire de LOCALISATION ( yes_or_no ).
+        #
+        # « default » ne serait pas typé :
+        #
+        #   default = None
+        #
+        # et son type serait testé en entrée de fonction :
+        #
+        #   if type(default) == bool:
+        #       [..]
+        #   elif type(default) == str:
+        #       [..]
+        #
+        # ... afin d'adapter notre comportement.
+        #
+        # => C'est finalement cette dernière solution qui a été
+        # retenue.
+        #
         langage: str = 'fre',
         retries: int = 3,
         reminder: str = 'Please try again !',
-        raise_on_retry_error: bool = False,
-        play_sound: bool = None
+        play_sound: bool = None,
+        raise_on_retry_error: bool = False
         ) -> bool:
         """
 
@@ -1774,21 +1852,63 @@ class ScriptSkeleton:
         :param prompt: le texte de la question.
 
         :param default: la réponse par défaut.
+        Si la valeur spécifiée est de type BOOL, on l'interprète
+        telle quelle.
+        Si la valeur spécifiée est de type STR, elle doit être une
+        des clés présentes dans notre dictionnaire de LOCALISATION
+        ( skeleton.yes_or_no ) sinon, en mode DEBUG, on lèvera une
+        exception AssertionError via l'instruction « assert ».
+        HORS du mode DEBUG, on laissera le script se poursuivre.
+
+        :param langage: le langage qui sera utilisé pour la saisie
+        ( en, fr, etc... ) afin d'interroger notre dictionnaire de
+        LOCALISATION ( skeleton.yes_or_no ) en conséquence.
 
         :param retries: le nombre d'essais autorisés.
 
         :param reminder: le texte à afficher si un essai échoue.
 
+        :param play_sound: faut-il « réveiller » l'utilisateur via
+        une sonnerie avant de poser la question la 1ère fois ?
+
         :param raise_on_retry_error: faut-il lever une exception de
         type ValueError si l'utilisateur dépasse le nombre d'essais
-        autorisés ? Si non, on renverra la valeur définie par défaut.
-        Si toutefois la valeur par défaut n'existe pas, alors on lève
-        une exception AssertionError...
+        autorisés ?
+        Si FALSE, on renverra la valeur définie par défaut dès que
+        ce nombre sera dépassé.
+        Si toutefois la valeur par défaut est elle-même incorrecte,
+        alors on lèvera l'exception AssertionError via l'instruction
+        « assert » : donc en mode DEBUG seul !!!
+        HORS du mode DEBUG, toujours pour une valeur par défaut non
+        valide, le script plantera sur une exception KeyError à :
 
-        :param play_sound: faut-il « réveiller » l'utilisateur via
-        une sonnerie avant de poser la question ?
+            return our_yes_or_no[default]
 
-        :return: YES ( True ) or FALSE ( No ).
+        Nous aurions pu choisir la solution d'1 fonction ask_yes_or_no
+        retournant 3 valeurs possibles : True, False, Invalid. Mais
+        cela aurait complexifié le test en retour de cette fonction,
+        qui pour l'intant peut simplement être :
+
+            if ask_yes_or_no(...):
+
+        Cette complexification ne semble pas souhaitable pour juste
+        parer à une éventualité très rare et, qui plus est, aisément
+        détectable et reproductible en mode DEBUG...
+
+        AUTRE SOLUTION POSSIBLE = Renvoyer tout simplement « default »
+        si « default » n'est pas 1 clé présente dans yes_or_no[langage].
+        Toutefois, nous sommes sûr que « default » n'est pas un booléen
+        [ retour attendu de ask_yes_or_no() ] mais plutôt de type STR.
+        Il faudrait donc avoir une valeur par défaut qui serait soit un
+        booléen, soit un STR : donc un objet dont on testerait le type
+        lors des tests sur la validité du paramètre « default ».
+
+        ==> C'est ce qui a finalement été choisi, « default » peut être
+        BOOL ou STR, mais le PB reste le MÊME s'il n'est ni l'un ni l'
+        autre, ou s'il est STR sans être une clef de yes_or_no[langage],
+        c-a-d il y aura plantage du script sur une EXCEPTION KeyError.       
+
+        :return: True ( YES ) or False ( NO ).
         """
 
         # On définit nos paramètres en fonction de notre mode de DEBUG personnel.
@@ -1807,37 +1927,72 @@ class ScriptSkeleton:
         #
         # Si le langage n'est pas référencé, nous présupposons l'anglais.
         #
-        if langage in yes_or_no.keys():
-            our_yes_or_no = yes_or_no[langage]
+        if langage not in yes_or_no.keys():
 
-        else:
-            our_yes_or_no = yes_or_no['eng']
-            self.shw('Unknown language... Using english...')
+            self.shw(f'Unknown language « {langage} »... Using english...')
             self.shw('')
+            langage = 'eng'
+
+        our_yes_or_no = yes_or_no[langage]
 
         # On vérifie la validité de la réponse par défaut.
         #
         # On affiche cette valeur par défaut en conséquence.
         #
-        if default is not None:
-            default = default.strip(whitespace)
+        if default is None:
 
-        dflt_empty = default is None or default == ''
-
-        if dflt_empty:
+            dflt_type = None
             dflt_valid = False
 
         else:
-            dflt_valid = default in our_yes_or_no.keys()
 
-            if dflt_valid:
-                prompt = prompt + " [« " + default + " » par défaut] "
+            dflt_type = type(default)
 
-            else:
-                raise AssertionError('Incorrect default value !!!')
+            assert dflt_type in (bool, str), (
+                "\n\t Invalid default value = Must be None, bool, or str."
+                f"\n\t Here type is = « {dflt_type} »."
+                )
+
+            if dflt_type == bool:
+
+                dflt_valid = True
+
+            elif dflt_type == str:
+
+                default = default.strip(whitespace)
+                dflt_valid = default != ''
+
+                if dflt_valid:
+
+                    assert default in our_yes_or_no.keys(), (
+                        f"\n\t Invalid default value = « {default} »"
+                        f" not in « {langage} » dictionary !"
+                        )
+
+        if dflt_valid:
+
+            prompt = f'{prompt} [« {default} » par défaut] '
 
         # On initialise la liste des OUI & NON acceptés.
         # ( en fonction du langage qui a été fixé ).
+        #
+        # Cette initialisation pourrait se réaliser via deux compréhensions de
+        # liste :
+        #
+        #   our_yes = [ key for key, value in our_yes_or_no.items() if value ]
+        #   our_no = [ key for key, value in our_yes_or_no.items() if not value ]
+        #
+        # ... mais on parcourt alors 2 fois la liste !
+        #
+        # Avec la solution ci-dessous ( boucle FOR ), la liste n'est parcourue
+        # qu'une seule fois.
+        #
+        # // TODO : Tester laquelle des 2 solutions est la plus rapide ???
+        #
+        # Cela dit, nous allons ensuite attendre une saisie humaine, donc la
+        # rapidité n'est pas ici un facteur discriminant !!!
+        #
+        # La solution avec une boucle FOR semble aussi la plus lisible.
         #
         our_yes = []
         our_no = []
@@ -1860,7 +2015,10 @@ class ScriptSkeleton:
             if answer.strip(whitespace) == '':
                 answer = default
 
-            if answer in our_yes_or_no.keys():
+            if answer in (True, False):
+                return answer
+
+            elif answer in our_yes_or_no.keys():
                 return our_yes_or_no[answer]
 
             retries = retries - 1
@@ -1870,25 +2028,29 @@ class ScriptSkeleton:
                 if raise_on_retry_error:
                     raise ValueError('Too much retry...')
 
-                elif dflt_valid:
+                else:
+                    assert dflt_valid, (
+                        'Too much retry and no correct default value !'
+                        )
+
                     self.shw('Too much retry... Using default !')
                     self.shw('')
-                    return our_yes_or_no[default]
 
-                else:
-                    raise AssertionError(
-                        'Too much retry... And no default value !'
+                    return (
+                        default
+                        if dflt_type == bool 
+                        else our_yes_or_no[default]
                         )
 
             self.shw(reminder)
-            self.shw('OK = ' + str(our_yes))
-            self.shw('NO = ' + str(our_no))
+            self.shw(f'OK = {our_yes}')
+            self.shw(f'NO = {our_no}')
             self.shw('')
 
 
     def choose_in_a_list(
         self,
-        list_of_choices: list, 
+        choices: list, 
         default_choice: int = -1
         ) -> int:
         """ Prend en charge le choix par l'utilisateur d'une valeur dans une liste.
@@ -1900,7 +2062,7 @@ class ScriptSkeleton:
         est automatique & cette fonction renvoie aussitôt l'index de cet élément ( ie
         0 donc ).
     
-        :param list_of_choices: la liste dans laquelle une valeur doit être choisie.
+        :param choices: la liste dans laquelle une valeur doit être choisie.
     
         :param default_choice: index du choix par défaut. Cette valeur doit être fixée à -1
         si aucun choix par défaut n'est défini.
@@ -1911,7 +2073,7 @@ class ScriptSkeleton:
 
         log = self.logItem
 
-        list_length = len(list_of_choices)
+        list_length = len(choices)
 
         # Si la liste est vide, le retour vaudra -1 car pas de choix possible.
         # Si la liste n'a qu'1 élément, le retour vaudra 0 car 1 seul choix possible.
@@ -1946,8 +2108,8 @@ class ScriptSkeleton:
             # // TODO : Il serait bon ici de limiter le nombre de réponses affichées
             # et ceci au cas où la LISTE SERAIT TROP LONGUE. Reste à trouver comment...
             #
-            for index, an_answer in enumerate(list_of_choices, start=0):
-                self.shw(str(index).rjust(3) + ' - ' + an_answer)
+            for index, an_answer in enumerate(choices, start=0):
+                self.shw(f'{index:>3} - {an_answer}')
             self.shw('')
 
             # On demande son choix à l'utilisateur, i-e le n° de la réponse dans la
@@ -1957,16 +2119,14 @@ class ScriptSkeleton:
             # fourni bien une réponse sous forme d'entier, et que cet entier soit
             # compris dans les bornes des index de la liste...
             #
+            msg = 'Veuillez indiquer le n° de la réponse choisie '
+
             if 0 <= default_choice < list_length:
-                choose_index_msg = 'Veuillez indiquer le n° de la réponse choisie ( « ' \
-                                   + str(list_of_choices[default_choice]) \
-                                   + ' » par défaut ) : '
-            else:
-                choose_index_msg = 'Veuillez indiquer le n° de la réponse choisie : '
+                msg += f'( « {choices[default_choice]} » par défaut ) '
 
             while True:
 
-                index_given = input(choose_index_msg)
+                index_given = input(msg + ': ')
                 print()
 
                 if index_given == '' and 0 <= default_choice < list_length:
@@ -1978,8 +2138,10 @@ class ScriptSkeleton:
                         index = int(index_given)
 
                     except ValueError:
-                        log.warning("La donnée saisie n'est pas un entier : « %s » !!!",
-                                    index_given)
+                        log.warning(
+                            "La donnée saisie n'est pas un entier : « %s » !!!",
+                            index_given
+                            )
                         log.warning('')
 
                     else:
@@ -1988,12 +2150,15 @@ class ScriptSkeleton:
                             break
 
                         else:
-                            log.warning("Veuillez indiquer un nombre compris entre 0 et %s.",
-                                        str(list_length - 1))
+                            log.warning(
+                                "Veuillez indiquer un nombre compris entre 0 et %s.",
+                                #str(list_length - 1)
+                                list_length - 1
+                                )
                             log.warning('')
 
-            log.debug('Index choisi     : %s', str(the_choice_is))
-            log.debug('Valeur associée  : %s', list_of_choices[the_choice_is])
+            log.debug('Index choisi     : %s', the_choice_is)
+            log.debug('Valeur associée  : %s', choices[the_choice_is])
             log.debug('')
 
         return the_choice_is
@@ -2029,7 +2194,7 @@ class ScriptSkeleton:
         log = self.logItem
 
         dict_length = len(dict_of_choices)
-
+    
         # Si le dictionnaire est vide, le retour vaudra None car pas de choix possible.
         # Si la liste n'a qu'1 élément, le retour vaudra sa clé car 1 seul choix possible.
         #
@@ -2051,18 +2216,14 @@ class ScriptSkeleton:
         else:
             self.shw('Veuillez choisir parmi les réponses suivantes :')
             self.shw('')
+            self.shw('  N° -   CLEF   =   VALEUR')
+            self.shw(' ' + 33 * '-')
 
             # // TODO : Il serait bon ici de limiter le nombre de réponses affichées
             # et ceci au cas où la LISTE SERAIT TROP LONGUE. Reste à trouver comment...
             #
             for idx, item in enumerate(sorted(dict_of_choices.items()), start=0):
-                self.shw(
-                    str(idx).rjust(3) \
-                    + ' - ' \
-                    + str(item[0]).rjust(6) \
-                    + ' = ' \
-                    + item[1]
-                    )
+                self.shw(f' {idx:>3} - {item[0]:>8} = {item[1]}')
             self.shw('')
 
             # On demande son choix à l'utilisateur, i-e le n° de la réponse dans la
@@ -2072,16 +2233,14 @@ class ScriptSkeleton:
             # considérer qu'il a saisi une clé si sa réponse n'est pas un entier
             # compris dans la liste des index affichés ).
             #
-            if restricted and default_key not in dict_of_choices:
-                msg = 'Veuillez indiquer un n° de réponse ou une clé : '
-            else:
-                msg = 'Veuillez indiquer un n° de réponse ou une clé ( « ' \
-                      + str(default_key) \
-                      + ' » par défaut ) : '
+            msg = 'Veuillez indiquer un n° de réponse ou une clef '
 
+            if not restricted or default_key in dict_of_choices:
+                msg += f'( « {default_key} » par défaut ) '
+ 
             while True:
 
-                answer = input(msg)
+                answer = input(msg + ': ')
                 print()
 
                 log.debug("La donnée saisie est : « %s ».", answer)
@@ -2111,7 +2270,7 @@ class ScriptSkeleton:
                         # voulu signifier une clé , qu'elle existe déjà ou qu'elle
                         # soit nouvelle. On en prend bonne note...
                         #
-                        log.debug("La réponse n'est pas un entier donc c'est une clé.")
+                        log.debug("La réponse n'est pas un entier donc c'est une clef.")
                         log.debug('')
 
                     else:
@@ -2141,7 +2300,7 @@ class ScriptSkeleton:
                             # a voulu signifier une clé, qu'elle existe ou qu'
                             # elle soit nouvelle. On la retient donc.
                             #
-                            log.debug("La réponse est un entier hors index donc une clé.")
+                            log.debug("La réponse est un entier hors index donc une clef.")
                             log.debug('')
 
                     finally:
@@ -2159,13 +2318,17 @@ class ScriptSkeleton:
                             break
 
                         else:
-                            log.warning("« %s » n'est pas une clé connue...", str(the_choice_is))
+                            log.warning(
+                                "« %s » n'est pas une clef connue...",
+                                #str(the_choice_is)
+                                the_choice_is
+                                )
 
                             if restricted:
                                 # Si les clés inconnues ne sont pas autorisées, alors
                                 # on reboucle.
                                 #
-                                log.warning("... or les clés inconnues ne sont pas autorisées !!!")
+                                log.warning("... or les clefs inconnues sont interdites !")
                                 log.warning('')
 
                             else:
@@ -2179,9 +2342,12 @@ class ScriptSkeleton:
                                 if ask_yes_or_no(prompt, 'o'):
                                     break
 
-            log.debug('Clé choisie     : %s', str(the_choice_is))
+            log.debug('Clef choisie    : %s', the_choice_is)
             if the_choice_is in dict_of_choices:
-                log.debug('Valeur associée : %s', dict_of_choices[the_choice_is])
+                log.debug(
+                    'Valeur associée : %s',
+                    dict_of_choices[the_choice_is]
+                    )
             log.debug('')
 
         return the_choice_is
@@ -2623,6 +2789,31 @@ class ScriptSkeleton:
 
         else:
 
+            # Cf https://wiki.openoffice.org/wiki/API/Tutorials/PDF_export
+            # Cf https://www.libreofficehelp.com/batch-convert-writer-documents-pdf-libreoffice/
+            # Cf https://stackoverflow.com/questions/30349542/command-libreoffice-headless-convert-to-pdf-test-docx-outdir-pdf-is-not
+            #
+            #   --convert-to pdf:writer_pdf_Export:{"Magnification":{"type":"long","value":"2"}}
+            #   --convert-to pdf:writer_pdf_Export:{"Zoom":{"type":"long","value":"75"}}
+            #
+            format_cible = 'pdf:writer_pdf_Export'
+            #format_cible += ':{'
+            #format_cible += '"Magnification":{"type":"long","value":"4"}'
+            #format_cible += ','
+            #format_cible += '"Zoom":{"type":"long","value":"75"}'
+            #format_cible += '}'
+            #
+            # Je n'ai pas réussi à faire fonctionner les configurations PDF
+            # ci-dessus... Il faut probablement utiliser les UNO tools pour
+            # finement choisir nos paramètres.
+            #
+            # Cf - et - Communications ( pipe, socket ).rar\UNO tools = unotools-0.3.3\
+            # in _Know\Info\Dvpt\Réalisation\Langages\Python\
+            #
+            # L'utilisation des UNO tools PERMETTRAIT PAR EXEMPLE DE CHOISIR
+            # LA FONT POUR CONVERSION D'UN FICHIER .TXT vers PDF, ODT, ...
+            #
+
             for file_in in args:
 
                 command_line = [
@@ -2643,8 +2834,13 @@ class ScriptSkeleton:
                     #   [..]
                     #   %LibreOffice% --invisible macro:///Standard.Convert.ConvertTXTtoPDF(%RESULT_FILE_TXT%)
                     #
-                    '--invisible',
-                    '--convert-to', 'pdf',
+                    # ... mais que j'ai finalement retiré car, après, si
+                    # je souhaitais lancer LibreOffice en interactif, je
+                    # n'y avais plus accès, à moins de tuer chaque process
+                    # LibreOffice avant de le lancer !
+                    #
+                    #'--invisible',
+                    '--convert-to', format_cible,
                     '--outdir', '.',
                     file_in
                     ]
@@ -2879,8 +3075,19 @@ class ScriptSkeleton:
             # déjà ou cela nous est demandé d'une
             # façon impérative ).
             #
+            # RQ : Nous sommes obligés de doubler
+            # les accolades ( {{ et }} ) ci-dessous
+            # dans la définition de format_mask afin
+            # de signifier à cette F-STRING que nous
+            # voulons le caractère spécial accolade
+            # en tant que tel ( et que ce n'est pas
+            # un nom de variable qui va être inclus
+            # entre accolades à cet endroit )... La
+            # F-STRING ne va donc interpréter que la
+            # partie {idx_size}.
+            #
             basename, ext = os.path.splitext(filename)
-            format_mask = ' - {:0' + str(idx_size) + 'd}'
+            format_mask = f' - {{:0{idx_size}d}}'
 
             suffix_n = idx_start
 
@@ -2897,6 +3104,11 @@ class ScriptSkeleton:
                 # pour tout faire en 1 seule fois ) car
                 # basename peut contenir « { » ou « } »
                 # ( ce qui ferait planter .format !!! ).
+                #
+                # Il aurait probablement été possible de
+                # réaliser cette concaténation en 1 fois
+                # via une F-STRING, mais c'est beaucoup
+                # moins lisible...
                 #
                 suffix = format_mask.format(suffix_n)
                 alt_name = basename + suffix + ext
@@ -2971,10 +3183,10 @@ class ScriptSkeleton:
             
             if ok_to_erase and ask_confirm:
 
-                msg = \
-                    'ATTENTION : on va écraser « ' \
-                    + destination \
-                    + ' » !!!'
+                msg = (
+                    'ATTENTION : Nous allons écraser'
+                    f' « {destination} » !!!'
+                    )
 
                 new_name = not self.ask_yes_or_no(msg, 'n')
 
@@ -2984,7 +3196,9 @@ class ScriptSkeleton:
             # qui nous a été donné ne peut être utilisé.
             #
             name, ext = os.path.splitext(destination)
+
             tmp_dst = name + new_suffix + ext
+
             file_dst = self.get_unused_filename(
                 tmp_dst,
                 idx_force = True
@@ -3015,8 +3229,8 @@ class ScriptSkeleton:
         log.debug('Format en sortie = « %s »', flag)
         log.debug('')
 
-        self.shw('Destination = ' + file_dst)
-        self.shw_debug('Format = « ' + flag + ' »')
+        self.shw(f'Destination = {file_dst}')
+        self.shw_debug(f'Format = « {flag} »')
         self.shw('')
 
         with open(file_dst, flag) as new_file:
@@ -3058,6 +3272,7 @@ class ScriptSkeleton:
         valid_url = url
 
         if ' ' in url:
+
             valid_url = valid_url.replace(
                 ' ',
                 '%20'
@@ -3087,8 +3302,8 @@ class ScriptSkeleton:
         url_string = ''
 
         url_valid = self.url_to_valid(url)
-        self.shw('URL get = ' + url)
-        self.shw('URL ok  = ' + url_valid)
+        self.shw(f'URL get = {url}')
+        self.shw(f'URL ok  = {url_valid}')
         self.shw('')
 
         try:
@@ -3106,15 +3321,11 @@ class ScriptSkeleton:
                 url_coding = data.headers.get_content_charset()
 
         except InvalidURL as error:
-            self.shw('===>> InvalidURL = ' \
-                + str(error)
-                )
+            self.shw(f'===>> InvalidURL = {error}')
             self.shw('')
 
         except NotConnected as error:
-            self.shw('===>> NotConnected = ' \
-                + str(error)
-                )
+            self.shw(f'===>> NotConnected = {error}')
             self.shw('')
 
         except TimeoutError:
@@ -3122,10 +3333,8 @@ class ScriptSkeleton:
             self.shw('')
 
         except HTTPError as error:
-            self.shw('===>> HTTP ' \
-                + str(error.status) \
-                + ' ERROR = ' \
-                + str(error.reason)
+            self.shw(
+                f'===>> HTTP {error.status} ERROR = {error.reason}'
                 )
             self.shw('')
 
@@ -3135,9 +3344,7 @@ class ScriptSkeleton:
                 self.shw('===>> Socket timeout error...')
 
             else:
-                self.shw('===>> URLError = ' \
-                    + str(error.reason)
-                    )
+                self.shw(f'===>> URLError = {error.reason}')
 
             self.shw('')
 
@@ -3195,8 +3402,12 @@ class ScriptSkeleton:
 
 if __name__ == "__main__":
 
-    my_skeleton = ScriptSkeleton(arguments = sys.argv)
-    log = my_skeleton.logItem
+    skull = ScriptSkeleton(
+        arguments = sys.argv,
+        debug_mode = True
+        )
+
+    log = skull.logItem
 
 
     # Les fichiers d'auto-test auront
@@ -3220,7 +3431,7 @@ if __name__ == "__main__":
     # -----------------------------------------------------------------------
     # #######################################################################
     #
-    user_answer = my_skeleton.ask_yes_or_no(
+    user_answer = skull.ask_yes_or_no(
         "Voulez-vous que je réalise mes AUTOTESTS de SAISIE ?",
         'non'
         )
@@ -3238,12 +3449,12 @@ if __name__ == "__main__":
         log.info('')
 
         fruits = ['apple', 'banana', 'cherry']
-        idx = my_skeleton.choose_in_a_list(fruits, 1)
+        idx = skull.choose_in_a_list(fruits, 1)
 
         if idx >= 0:
-            my_skeleton.shw('Votre réponse = ' + fruits[idx])
+            skull.shw(f'Votre réponse = {fruits[idx]}')
 
-        my_skeleton.shw('')
+        skull.shw('')
 
         # On appelle choose_in_a_dict() pour vérifier
         # que Python ne plante pas en le parcourant.
@@ -3260,12 +3471,12 @@ if __name__ == "__main__":
             "France":"Paris",
             "India":"New Delhi"
             }
-        key = my_skeleton.choose_in_a_dict(capitals, 'India')
+        key = skull.choose_in_a_dict(capitals, 'India')
 
         if key is not None:
-            my_skeleton.shw('Votre réponse = ' + capitals[key])
+            skull.shw(f'Votre réponse = {capitals[key]}')
 
-        my_skeleton.shw('')
+        skull.shw('')
 
 
     # #######################################################################
@@ -3274,7 +3485,7 @@ if __name__ == "__main__":
     # -----------------------------------------------------------------------
     # #######################################################################
     #
-    user_answer = my_skeleton.ask_yes_or_no(
+    user_answer = skull.ask_yes_or_no(
         "Voulez-vous que je réalise mes AUTOTESTS de RECHERCHE de fichiers & ÉDITION format texte ?",
         'non'
         )
@@ -3291,21 +3502,21 @@ if __name__ == "__main__":
         log.info('')
         log.info('')
 
-        files_found = my_skeleton.search_files_from_a_mask(
+        files_found = skull.search_files_from_a_mask(
             mask = '*.py'
             )
 
         log.debug('')
 
-        my_skeleton.shw('Fichier(s) trouvé(s) [ *.py ] :')
-        my_skeleton.shw('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
+        skull.shw('Fichier(s) trouvé(s) [ *.py ] :')
+        skull.shw('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
 
         for file_name in sorted(files_found):
-            my_skeleton.shw('\t' + file_name)
+            skull.shw('\t' + file_name)
 
-        my_skeleton.shw('')
+        skull.shw('')
 
-        user_answer = my_skeleton.ask_yes_or_no(
+        user_answer = skull.ask_yes_or_no(
             "Éditons-nous ces fichiers ( via notre éditeur de TXT ) ?",
             'oui'
             )
@@ -3319,7 +3530,7 @@ if __name__ == "__main__":
             log.info('')
             log.info('')
 
-            my_skeleton.edit_file_txt(
+            skull.edit_file_txt(
                 *files_found,
                 wait = False
                 )
@@ -3331,7 +3542,7 @@ if __name__ == "__main__":
     # -----------------------------------------------------------------------
     # #######################################################################
     #
-    user_answer = my_skeleton.ask_yes_or_no(
+    user_answer = skull.ask_yes_or_no(
         "Voulez-vous que je réalise mes AUTOTESTS de PDF ?",
         'non'
         )
@@ -3348,13 +3559,11 @@ if __name__ == "__main__":
         log.info('')
         log.info('')
 
-        if my_skeleton.convert_to_pdf_init():
+        if skull.convert_to_pdf_init():
 
-            f_name = (
-                it_begins_with
-                + ' - '
-                + my_skeleton.build_now_string()
-                + '.txt'
+            f_name = '{} - {}.txt'.format(
+                it_begins_with,
+                skull.build_now_string()
                 )
 
             with open(f_name, "wt") as f_test:
@@ -3405,15 +3614,30 @@ if __name__ == "__main__":
                     "purus. Curabitur eu amet.\n"
                     '\n')
 
-            my_skeleton.convert_to_pdf_run(f_name, __file__, wait = False)
+            # ATTENTION = On réalise dorénavant :
+            #
+            #       une exécution SYNCHRONE ( wait = True ) !!!
+            #
+            # ... En effet, si l'exécution est asynchrone, Libre Office ne
+            # va en général convertir qu'un seul des 2 fichiers ( soit le
+            # fichier temporaire f_name, soit __file__ ). Et on ne peut pas
+            # savoir lequel des 2 aura sa préférence...
+            #
+            # Il semble que cela soit dû au fait que Libre Office reçoit
+            # trop rapidement & trop consécutivement les deux demandes de
+            # conversion et que, dans la « précipitation », il perde ses
+            # billes, en oublie un ( le 1er ou le 2ème, il n'y a pas de
+            # règle à ce sujet ) : Libre Office ne convertit que l'autre.
+            #
+            skull.convert_to_pdf_run(f_name, __file__, wait = True)
 
-            my_skeleton.shw('Fichier converti : ' + f_name)
-            my_skeleton.shw('Fichier converti : ' + __file__)
+            skull.shw(f'Fichier converti : {f_name}')
+            skull.shw(f'Fichier converti : {__file__}')
 
         else:
-            my_skeleton.shw('Conversion PDF impossible sur ce terminal.')
+            skull.shw('Conversion PDF impossible sur ce terminal.')
 
-        my_skeleton.shw('')
+        skull.shw('')
 
 
     # #######################################################################
@@ -3422,11 +3646,11 @@ if __name__ == "__main__":
     # -----------------------------------------------------------------------
     # #######################################################################
     #
-    user_answer = my_skeleton.ask_yes_or_no(
+    user_answer = skull.ask_yes_or_no(
         "Voulez-vous que je réalise mes AUTOTESTS de COMPARAISON de FICHIERS ?",
         'non'
         )
-
+    
     if user_answer:
 
         # On appelle & teste la fonction compare_files().
@@ -3439,32 +3663,30 @@ if __name__ == "__main__":
         log.info('')
 
         reference = (
-              "Ve 29 feb AF 134 CDG (1,0) BOM    09h30 18h00 77W TVSV :  8h30 \n"
-            + '\n'
-            + "\tEquipage PNC\n"
-            + "DEI CAS  LAURENT  36017312     B  EN SUPPLEM  P  IMPOS COMM.   UEKR  AMERIQUES  2EJ  \n"
-            + '######### FIN #########'
+            "Ve 29 feb AF 134 CDG (1,0) BOM    09h30 18h00 77W TVSV :  8h30 \n"
+            "\n"
+            "\tEquipage PNC\n"
+            "DEI CAS  LAURENT  36017312     B  EN SUPPLEM  P  IMPOS COMM.   UEKR  AMERIQUES  2EJ  \n"
+            "######### FIN #########"
             )
 
         transformation = (
-              "Ve 29 feb AF 134 CDG (1,0) BOM    09h30 18h00 77W TVSV :  8h30 \n"
-            + '\n'
-            + "\tEquipage PNC\n"
-            + "DEI CAS LAURENT                   36017312                      B EN SUPPLEM P IMPOS COMM.     UEKR AMERIQUES        2EJ\n"
-            + '\n'
-            + "\tEquipage PNC\n"
-            + 'DEI CAS LAURENT                   36017312   A350 359       C/C                                KDKR CAR/OCEAN INDIEN 3DD\n'
-            + '######### FIN #########'
+            "Ve 29 feb AF 134 CDG (1,0) BOM    09h30 18h00 77W TVSV :  8h30 \n"
+            "\n"
+            "\tEquipage PNC\n"
+            "DEI CAS LAURENT                   36017312                      B EN SUPPLEM P IMPOS COMM.     UEKR AMERIQUES        2EJ\n"
+            "\n"
+            "\tEquipage PNC\n"
+            "DEI CAS LAURENT                   36017312   A350 359       C/C                                KDKR CAR/OCEAN INDIEN 3DD\n"
+            "######### FIN #########"
             )
 
 
         # On créé & on log le fichier de référence.
         #
-        f_reference = (
-            it_begins_with
-            + ' - ( 1 ) contenu de référence'
-            + my_skeleton.build_now_string()
-            + '.txt'
+        f_reference = '{} - ( 1 ) contenu de référence - {}.txt'.format(
+            it_begins_with,
+            skull.build_now_string()
             )
 
         with open(f_reference, "wt") as new_file:
@@ -3491,11 +3713,9 @@ if __name__ == "__main__":
 
         # On créé & on log le fichier à comparer.
         #
-        f_transformation = (
-            it_begins_with
-            + ' - ( 2 ) contenu transformé'
-            + my_skeleton.build_now_string()
-            + '.txt'
+        f_transformation = '{} - ( 2 ) contenu transformé - {}.txt'.format(
+            it_begins_with,
+            skull.build_now_string()
             )
 
         with open(f_transformation, "wt") as new_file:
@@ -3522,40 +3742,40 @@ if __name__ == "__main__":
 
         # On compare les 2 fichiers : INTERSECTION.
         #
-        my_skeleton.shw('')
-        my_skeleton.shw("RÉSULTAT de l'INTERSECTION des deux FICHIERS :")
-        my_skeleton.shw('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
-        my_skeleton.shw('«')
+        skull.shw('')
+        skull.shw("RÉSULTAT de l'INTERSECTION des deux FICHIERS :")
+        skull.shw('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
+        skull.shw('«')
  
-        intersection = my_skeleton.compare_files(
+        intersection = skull.compare_files(
             f_reference,
             f_transformation,
             action = 'intersection'
             )
 
         for elt in intersection:
-            my_skeleton.shw(str(elt).rstrip('\r\n'))
-        my_skeleton.shw('»')
-        my_skeleton.shw('')
+            skull.shw(str(elt).rstrip('\r\n'))
+        skull.shw('»')
+        skull.shw('')
 
 
         # On compare les 2 fichiers : DIFFÉRENCE / au fichier référence.
         #
-        my_skeleton.shw('')
-        my_skeleton.shw('LIGNES de la RÉFÉRENCE NON PRÉSENTES dans le fichier transformé :')
-        my_skeleton.shw('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
-        my_skeleton.shw('«')
+        skull.shw('')
+        skull.shw('LIGNES de la RÉFÉRENCE NON PRÉSENTES dans le fichier transformé :')
+        skull.shw('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
+        skull.shw('«')
 
-        difference = my_skeleton.compare_files(
+        difference = skull.compare_files(
             f_reference,
             f_transformation,
             action = 'difference'
             )
 
         for elt in difference:
-            my_skeleton.shw(str(elt).rstrip('\r\n'))
-        my_skeleton.shw('»')
-        my_skeleton.shw('')
+            skull.shw(str(elt).rstrip('\r\n'))
+        skull.shw('»')
+        skull.shw('')
 
 
         # On compare les 2 fichiers : DIFFÉRENCE / au 2ème fichier.
@@ -3563,40 +3783,40 @@ if __name__ == "__main__":
         # C-a-d que l'on va ici donner les lignes en plus dans le
         # 2ème fichier...
         #
-        my_skeleton.shw('')
-        my_skeleton.shw('LIGNES AJOUTÉES / MODIFIÉES dans le FICHIER TRANSFORMÉ :')
-        my_skeleton.shw('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
-        my_skeleton.shw('«')
+        skull.shw('')
+        skull.shw('LIGNES AJOUTÉES / MODIFIÉES dans le FICHIER TRANSFORMÉ :')
+        skull.shw('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
+        skull.shw('«')
  
-        ajouts = my_skeleton.compare_files(
+        ajouts = skull.compare_files(
             f_transformation,
             f_reference,
             action = 'difference'
             )
 
         for elt in ajouts:
-            my_skeleton.shw(str(elt).rstrip('\r\n'))
-        my_skeleton.shw('»')
-        my_skeleton.shw('')
+            skull.shw(str(elt).rstrip('\r\n'))
+        skull.shw('»')
+        skull.shw('')
 
 
         # On compare les 2 fichiers : DIFFÉRENCE SYMÉTRIQUE.
         #
-        my_skeleton.shw('')
-        my_skeleton.shw('RÉSULTAT de la DIFFÉRENCE SYMÉTRIQUE entre les deux FICHIERS :')
-        my_skeleton.shw('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
-        my_skeleton.shw('«')
+        skull.shw('')
+        skull.shw('RÉSULTAT de la DIFFÉRENCE SYMÉTRIQUE entre les deux FICHIERS :')
+        skull.shw('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
+        skull.shw('«')
  
-        intersection = my_skeleton.compare_files(
+        intersection = skull.compare_files(
             f_reference,
             f_transformation,
             action = 'difference symétrique'
             )
 
         for elt in intersection:
-            my_skeleton.shw(str(elt).rstrip('\r\n'))
-        my_skeleton.shw('»')
-        my_skeleton.shw('')
+            skull.shw(str(elt).rstrip('\r\n'))
+        skull.shw('»')
+        skull.shw('')
 
 
     # #######################################################################
@@ -3605,7 +3825,7 @@ if __name__ == "__main__":
     # -----------------------------------------------------------------------
     # #######################################################################
     #
-    user_answer = my_skeleton.ask_yes_or_no(
+    user_answer = skull.ask_yes_or_no(
         "Voulez-vous que je réalise les AUTOTESTS de get_unused_filename() ?",
         'non'
         )
@@ -3622,41 +3842,41 @@ if __name__ == "__main__":
         log.info('')
         log.info('')
 
-        f_name = it_begins_with + '.tmp'
+        f_name = f'{it_begins_with}.tmp'
 
-        my_skeleton.shw(f'Nom de référence = « {f_name} »')
-        my_skeleton.shw('')
+        skull.shw(f'Nom de référence = « {f_name} »')
+        skull.shw('')
 
-        f_tmp = my_skeleton.get_unused_filename(
+        f_tmp = skull.get_unused_filename(
             f_name,
             idx_force = False
             )
 
-        my_skeleton.shw(f'Prochain nom disponible = « {f_tmp} »')
-        my_skeleton.shw('')
+        skull.shw(f'Prochain nom disponible = « {f_tmp} »')
+        skull.shw('')
 
-        my_skeleton.shw(f'Création de « {f_tmp} »')
-        my_skeleton.shw('')
+        skull.shw(f'Création de « {f_tmp} »')
+        skull.shw('')
 
         with open(f_tmp, "wt") as f_test:
             f_test.write('Dummy')
 
-        my_skeleton.shw('Prochain nom après « {f_tmp} » ...')
-        my_skeleton.shw('')
+        skull.shw(f'Prochain nom après « {f_tmp} » ...')
+        skull.shw('')
 
-        my_skeleton.shw(
-            '\t* sur 3 chiffres, base 0 : « {0} »'.format(
-                my_skeleton.get_unused_filename(f_name)
+        skull.shw(
+            '\t* sur 3 chiffres, base 0 : « {} »'.format(
+                skull.get_unused_filename(f_name)
                 )
             )
-        my_skeleton.shw('')
+        skull.shw('')
 
-        my_skeleton.shw(
-            '\t* sur 18 chiffres, base 33 : « {0} »'.format(
-                my_skeleton.get_unused_filename(f_name, 18, 33)
+        skull.shw(
+            '\t* sur 18 chiffres, base 33 : « {} »'.format(
+                skull.get_unused_filename(f_name, 18, 33)
                 )
             )
-        my_skeleton.shw('')
+        skull.shw('')
 
 
     # #######################################################################
@@ -3665,7 +3885,7 @@ if __name__ == "__main__":
     # -----------------------------------------------------------------------
     # #######################################################################
     #
-    user_answer = my_skeleton.ask_yes_or_no(
+    user_answer = skull.ask_yes_or_no(
         "Voulez-vous que je réalise mes AUTOTESTS de SHUTDOWN ?",
         'non'
         )
@@ -3682,24 +3902,24 @@ if __name__ == "__main__":
         log.info('')
         log.info('')
 
-        my_skeleton.shw('SHUTDOWN « par défaut » ( rien )')
-        my_skeleton.shw('')
+        skull.shw('SHUTDOWN « par défaut » ( rien )')
+        skull.shw('')
 
-        my_skeleton.shutdown_please()
+        skull.shutdown_please()
 
-        my_skeleton.shw('')
-        my_skeleton.shw('SHUTDOWN « complet »')
-        my_skeleton.shw('')
+        skull.shw('')
+        skull.shw('SHUTDOWN « complet »')
+        skull.shw('')
 
-        my_skeleton.shutdown_please(shutdown_complete)
+        skull.shutdown_please(shutdown_complete)
 
-        my_skeleton.shw('')
-        my_skeleton.shw('SHUTDOWN « hibernation »')
-        my_skeleton.shw('')
+        skull.shw('')
+        skull.shw('SHUTDOWN « hibernation »')
+        skull.shw('')
 
-        my_skeleton.shutdown_please(shutdown_hibernate)
+        skull.shutdown_please(shutdown_hibernate)
 
-        my_skeleton.shw('')
+        skull.shw('')
 
 
     # #######################################################################
@@ -3713,11 +3933,14 @@ if __name__ == "__main__":
     if user_answer:
 
         print(
-            '\nATTENTION : Le test suivant demande à ce que :\n\n',
-            '\t- mplay32.exe soit dans le répertoire de travail,\n\n',
-            '\t- ainsi que « Windows XP Battery Low.wav ».\n')
+            "\nATTENTION : Le test suivant demande à ce que :",
+            "\t- mplay32.exe soit dans le répertoire de travail,",
+            "\t- ainsi que « Windows XP Battery Low.wav ».",
+            sep = '\n\n',
+            end = '\n\n'
+            )
 
-        user_answer = my_skeleton.ask_yes_or_no(
+        user_answer = skull.ask_yes_or_no(
             "Voulez-vous que je teste le réveil via mplay32.exe ?",
             'non'
             )
@@ -3726,27 +3949,27 @@ if __name__ == "__main__":
 
         # On sauvegarde les vraies valeurs.
         #
-        real_exe = my_skeleton.paths_and_miscellaneous['EXE_player']
-        real_arg = my_skeleton.paths_and_miscellaneous['ARG_player']
-        real_played = my_skeleton.paths_and_miscellaneous['EXE_played']
+        real_exe = skull.paths_and_miscellaneous['EXE_player']
+        real_arg = skull.paths_and_miscellaneous['ARG_player']
+        real_played = skull.paths_and_miscellaneous['EXE_played']
 
         # On affecte des valeurs permettant le test.
         #
-        working_path = my_skeleton.paths_and_miscellaneous['working_PATH_FULL']
+        working_path = skull.paths_and_miscellaneous['working_PATH_FULL']
 
         player_exe = os.path.join(working_path, 'mplay32.exe')
         player_arg = ['/play', '/close']
         played = os.path.join(working_path, 'Windows XP Battery Low.wav')
 
-        my_skeleton.paths_and_miscellaneous['EXE_player'] = player_exe
-        my_skeleton.paths_and_miscellaneous['ARG_player'] = player_arg
-        my_skeleton.paths_and_miscellaneous['EXE_played'] = played
+        skull.paths_and_miscellaneous['EXE_player'] = player_exe
+        skull.paths_and_miscellaneous['ARG_player'] = player_arg
+        skull.paths_and_miscellaneous['EXE_played'] = played
 
         # On teste l'émission via mplay32.exe d'un son de réveil.
         #
         if os.path.isfile(player_exe) and os.path.isfile(played):
 
-            my_skeleton.on_sonne_le_reveil()
+            skull.on_sonne_le_reveil()
 
             # On marque une pause le temps que l'utilisateur puisse entendre
             # le son ( et donc que mplay32.exe puisse le jouer... ).
@@ -3754,14 +3977,14 @@ if __name__ == "__main__":
             input('Frapper <Entrée> une fois le son entendu...')
 
         else:
-            my_skeleton.shw('Certains fichiers demandés sont ABSENTS !!!')
-            my_skeleton.shw('')
+            skull.shw('Certains fichiers demandés sont ABSENTS !!!')
+            skull.shw('')
 
         # On restaure les vraies valeurs.
         #
-        my_skeleton.paths_and_miscellaneous['EXE_player'] = real_exe
-        my_skeleton.paths_and_miscellaneous['ARG_player'] = real_arg
-        my_skeleton.paths_and_miscellaneous['EXE_played'] = real_played
+        skull.paths_and_miscellaneous['EXE_player'] = real_exe
+        skull.paths_and_miscellaneous['ARG_player'] = real_arg
+        skull.paths_and_miscellaneous['EXE_played'] = real_played
 
 
     # #######################################################################
@@ -3772,7 +3995,7 @@ if __name__ == "__main__":
     #
     # On teste l'émission « normale » ( par défaut ) d'un son de réveil.
     #
-    my_skeleton.on_sonne_le_reveil()
+    skull.on_sonne_le_reveil()
 
     log.info('')
     log.info('Le problème est que je ne sais rien faire tout seul...')
@@ -3790,7 +4013,7 @@ if __name__ == "__main__":
     # -----------------------------------------------------------------------
     # #######################################################################
     #
-    user_answer = my_skeleton.ask_yes_or_no(
+    user_answer = skull.ask_yes_or_no(
         "En sortant, voulez-vous dire AU REVOIR ?",
         'non'
         )
@@ -3807,19 +4030,19 @@ if __name__ == "__main__":
         log.info('')
         log.info('')
 
-        my_skeleton.shw('Nous invoquons donc on_dit_au_revoir().')
-        my_skeleton.shw('')
+        skull.shw('Nous invoquons donc on_dit_au_revoir().')
+        skull.shw('')
 
-        my_skeleton.on_dit_au_revoir()
+        skull.on_dit_au_revoir()
 
     else:
 
         # On quitte l'application...
         #
         # Et l'appel au Garbage Collector par Python
-        # va appeler la méthode __del() de my_skeleton.
+        # va appeler la méthode __del() de skull.
         #
         # Elle-même appellera on_dit_au_revoir()
         #
-        my_skeleton.shw('On laisse donc le script le faire tout seul.')
-        my_skeleton.shw('')
+        skull.shw('On laisse donc le script le faire tout seul.')
+        skull.shw('')
