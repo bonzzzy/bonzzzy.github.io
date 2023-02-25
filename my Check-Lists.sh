@@ -9,5 +9,6 @@
 #
 # 		chmod u+rwx @c
 #
+echo
 
 python "my Check-Lists.py"
