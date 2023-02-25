@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf8 -*-
 
+
 # Positionner la variable ___debug___ ci-dessous suivant les besoins...
 #
 # RQ : « ___debug___ = __debug__ » implique que le mode choisi dépend
@@ -38,6 +39,41 @@ from http.client import InvalidURL, NotConnected
 from socket import timeout
 
 
+# Les modules suivants ne sont pas importés par défaut, ils ne le seront que
+# sur demande expresse de l'utilisateur de ce script...
+#
+# Toutefois, on déclare des variables globales les concernant afin que, s'ils
+# sont importés ( dans la classe FileSystemTree ), ils puissent être visibles
+# dans tout le reste de ce script !!!
+#
+pathlib = None
+fnmatch = None
+glob = None
+
+# Pour ce qui est du module PATHLIB, faudra-t-il l'importer pour l'utiliser ?
+# Si oui, devra-t-il être utilisé directement ( via des objets pathlib.PATH )
+# ou devra-t-on l'encapsuler dans un objet FileSystemLeaf ?
+#
+# ATTENTION : Si le module PATHLIB est importé, certaines fonctions de notre
+# script renverront des valeurs de type PATHLIB.PATH en tant que paths, sinon
+# ces valeurs seront de type STRING !!!
+#
+# Il font donc être prêt à gérer ces 2 types de valeurs lorsque nous traitons
+# des paths ( d'autant plus dans le cas du mode « pathlib_direct » ), SAUF si
+# nous ne demandons jamais à ce que la librairie PATHLIB soit utilisée.
+#
+pathlib_ignore = None
+pathlib_direct = 'pathlib_direct'
+pathlib_deeply = 'pathlib_embedded'
+
+# Si nous parcourons un répertoire en utilisant le module OS.PATH, le ferons
+# -nous via la la fonction os.listdir() ou via os.scandir() ?
+#
+walking_ignore = None
+walking_via_listdir = 'os.listdir'
+walking_via_scandir = 'os.scandir'
+
+
 # ===========================================================================
 #
 #   SKELETON.PY = SQUELETTE réutilisable pour débuter rapidement le codage
@@ -45,7 +81,11 @@ from socket import timeout
 #
 # Les différentes PARTIES sont :
 #
-#   - Constantes & Définitions ( dont celle de la classe ScriptSkeleton )
+#   - CONSTANTES et fonctions générales ( _show_(), etc )
+#
+#   - Définition et fonctions des classes FileSystemTree + FileSystemLeaf
+#
+#   - Définition de la classe ScriptSkeleton ( __init__() et __del__() )
 #
 #   - Fonctions d'initialisation des EXÉCUTABLES et RÉPERTOIRES utilisés
 #
@@ -102,6 +142,7 @@ from socket import timeout
 #
 #   - Fonctions de GESTION de FICHIERS :
 #
+#   ( in autotests )    . def file_system_mode
 #   ( in autotests )    . def search_files_from_a_mask
 #   ( in autotests )    . def convert_to_pdf_init
 #   ( in autotests )    . def convert_to_pdf_run
@@ -124,7 +165,7 @@ from socket import timeout
 #
 #   PARTIE :
 #   ~~~~~~~~
-#   Constantes & Définitions ( dont celle de la classe ScriptSkeleton ).
+#   CONSTANTES et fonctions générales ( _show_(), etc ).
 #
 # ---------------------------------------------------------------------------
 
@@ -144,6 +185,7 @@ shutdown_hibernate = 'hibernate'
 # Les multiples façons de dire OUI ou NON.
 #
 yes_or_no = {
+    # [ ENGLISH ]
     'eng'   : {
         'y'     : True,
         'yes'   : True,
@@ -152,6 +194,7 @@ yes_or_no = {
         'no'    : False,
         'nope'  : False,
         },
+    # [ FRENCH ]
     'fre'   : {
         'o'     : True,
         'oui'   : True,
@@ -230,14 +273,2261 @@ filetype_to_coding = {
 
 # Fonction d'affichage.
 #
-def _show_(msg, journal):
+def _show_(msg, journal = None):
     """ Pour afficher un msg, tout en le journalisant en
     même temps.
     """
 
-    print(msg)
+    msg_to_print = '' if msg is None else str(msg)
+
+    print(msg_to_print)
+
     if journal is not None:
-        journal.debug(msg)
+        journal.debug(msg_to_print)
+
+
+# ---------------------------------------------------------------------------
+#
+#   PARTIE :
+#   ~~~~~~~~
+#   Définition et fonctions des classes FileSystemTree + FileSystemLeaf.
+#
+# ---------------------------------------------------------------------------
+
+
+# Si nous demandons une recherche de path via wildcards
+# ( i-e 1 recherche GLOB de style Unix ) via la méthode
+# < FileStyleLeaf >._fake_iglob(), alors nous pouvons
+# préciser si nous désirons que nous soient retournés :
+#
+#   . tous les fichiers et répertoires correspondant au
+#   masque fourni.
+#
+#   . seulement les répertoires.
+#
+#   . seulement les fichiers.
+#
+_glob_all_nodes = 0
+_glob_only_dirs = 1
+_glob_only_files = 2
+
+
+# Si nous demandons une recherche de path via wildcards
+# ( i-e 1 recherche GLOB de style Unix ) via la méthode
+# < FileStyleLeaf >._fake_iglob(), alors nous pouvons
+# préciser si nous souhaitons forcer une utilisation du
+# module FNMATCH. Pour cela, nous utiliserons la valeur
+# _search_fnmatch lors du lancement des traitements via 
+# la méthode < FileStyleLeaf >._parse_mask() :
+#
+#   _fake_iglob( n_type, **_parse_mask( mask, _search_fnmatch ) )
+#
+# Les autres valeurs ( _search_simple, _search_complex,
+# ... ) ne sont qu'à usage interne.
+#
+_search_fnmatch = 0
+_search_complex = 1
+_search_simple = 2
+
+_searches_lst = (
+    _search_simple,
+    _search_complex,
+    _search_fnmatch
+)
+
+
+# Itérateur / GÉNÉRATEUR vide.
+#
+# Il s'agit du générateur qui sera renvoyé par la méthode
+# Glob() de la classe FileSystemTree.FileSystemLeaf dans
+# certains où son résultat serait vide.
+#
+def _generator_empty():
+    # -> None
+    """ Pour 1 explication sur la forme de ce générateur,
+    voir le post suivant :
+
+        https://stackoverflow.com/questions/13243766/how-to-define-an-empty-generator-function/
+
+    ... dont surtout :
+
+        https://stackoverflow.com/a/13243870/3840170
+        -> analyse des différents « empty generator »
+        possibles.
+        
+        https://stackoverflow.com/a/61496399/577088
+        -> analyse du meilleur « empty generator » sous
+        l'angle du code CPython généré.
+
+    Tous ces posts se retrouvent dans :
+
+        - GÉNÉRATEURS - How to define an EMPTY GENERATOR function *
+        in - et - ITÉRATEUR ou GÉNÉRATEUR.rar
+        in _Know\Info\Dvpt\Réalisation\Langages\Python
+
+    Dans ce script, nous aurions toutefois pu opter pour
+    renvoyer une liste vide, ou plutôt 1 itérateur vide :
+
+        iter(())
+
+    mais ce _generator_empty() a été choisi pour raison
+    didactique...
+
+    Nous aurions également pu choisir la forme suivante
+    ( peut-être plus compréhensible ) :
+
+        def _generator_empty():
+            yield from ()
+    """
+    return
+    yield
+
+
+# Création paramétrée d'un GÉNÉRATEUR.
+#
+def _generator_create(
+    iterable = list(),          # iterable, iterator, generator
+    yield_fct = os.path.abspath # function
+    ):
+    # -> Return = « Type( yield_fct() ) »
+    """ Nous créons ici 1 générateur via 2 paramètres :
+
+    :param iterable: l'itérable, l'itérateur, ou le générateur
+    qui sera utilisé pour fournir une suite de valeurs. Nous
+    subodorons que la suite de valeurs fournies sera de type
+    noeud d'un système de fichiers ( ie des répertoires et /
+    ou des fichiers ).
+
+    :param yield_fct: la fonction qui sera appliquée à chaque
+    valeur, avant qu'elle ne soit retournée à l'appelant.
+    """
+    for node in iterable:
+
+        #if str(node) in {'.', '..'}: continue
+        #
+        # Yielding a path object for these makes
+        # little sense [ '.', '..' ne sont pas ici
+        # parcourus ].
+        #
+        # Mais l'instruction ci-dessus ( relative
+        # à « {'.', '..'} » ) ne marche pas dans
+        # tous les cas, nous l'avons donc mise en
+        # commentaire.
+        #
+        # En effet, il faut que « str(node) » donne
+        # le nom du noeud. Ce qui n'est pas le cas
+        # si « node » est de type os.DirEntry. Il
+        # faudrait dans ce cas écrire « node.name ».
+        #
+        # Cela ne fonctionne pas non plus si nous
+        # est transmise une information sous forme
+        # de path ABSOLU...
+        #
+        # Il faudrait donc ajouter un paramètre à
+        # ce générateur de GENERATOR, et ce afin
+        # de pouvoir lire le nom seul du noeud,
+        # sans son chemin !!!
+        #
+        # De toute façon, cette situation ne devrait
+        # pas se présenter car « os.listdir [..] does
+        # not include the special entries '.' and '..'
+        # even if they are present ».
+        #
+        # Cf https://docs.python.org/3/library/os.html#os.listdir
+        #
+        # Pas plus que os.scandir() ou la méthode
+        # pathlib.Path.iterdir(), d'ailleurs.
+        #
+        # Cf https://docs.python.org/3/library/os.html#os.scandir
+        # Cf https://docs.python.org/3/library/pathlib.html#pathlib.Path.iterdir
+
+        yield yield_fct(node)
+
+
+class FileSystemTree:
+    """ Cette classe permet de gérer répertoires et fichiers.
+    Pour ceci, suivant sa configuration, elle s'appuie soit
+    sur la librairie OS.PATH, soit sur le module PATHLIB.
+
+    Elle peut également utiliser les modules FNMATCH ou GLOB,
+    pour des fonctions annexes.
+
+    Ces différentes possibilités permettent de s'adapter aux
+    versions de Python et aux différents OS.
+
+    Pour des tests sur ce sujet :
+
+        Cf * - TESTS --- ( import + PATHLIB + GLOB + fnmatch ) ---.py
+        in --- [ skeleton ] = 2Do & NOTES.rar\( TESTS ) dont « mplay32.exe »
+        in _Know\Info\Dvpt\Réalisation\Src\_Python\[ skeleton ]
+
+        ou
+
+        Cf --- FILES and PATH --- ( mes ) NOTES = os.path, PATHLIB, fnmatch, GLOB*.py
+        in _Know\Info\Dvpt\Réalisation\Langages\Python\- et - FICHIERS.rar
+
+    REMARQUE : L'importation du module OS est toujours demandée
+    par skeleton.py. Pour les autres, cela dépend du bon vouloir
+    des utilisateurs de ce script.
+
+    REMARQUE : Par CONVENTION, les méthodes de FileSystemTree et
+    celles de sa « inner class » FileSystemLeaf, sont IDENTIQUES
+    ( i.e ont le même nom, la même définition ) que les méthodes
+    présentes dans le module PATHLIB.
+
+        Cf https://docs.python.org/3/library/pathlib.html#correspondence-to-tools-in-the-os-module
+
+    ATTENTION : Si le module PATHLIB est importé, certaines des
+    méthodes de cet objet renverront en guise de paths ( chemin
+    de fichiers ) des valeurs type PATHLIB.PATH, sinon ces mêmes
+    valeurs seront de type STRING !!!
+
+        Il font donc être prêt à gérer ces deux types de valeurs
+        lorsque nous traitons des path ( d'autant plus si notre
+        mode est « pathlib_direct » ), SAUF si nous ne demandons
+        pas à ce que la librairie PATHLIB soit utilisée.
+
+    ATTENTION : Si l'import direct de PATHLIB est demandé ( mode
+    « pathlib_direct » ), toute fonction fournie par PATHLIB sera
+    accessible, même si non déclarées / surchargées dans la classe
+    incluse FileSystemLeaf !!!
+
+        En effet, si l'on travaille de façon directe avec le module
+        PATHLIB, alors FileSystemTree.node() renvoie directement un
+        objet PATHLIB et cela va shunter la classe FileSystemLeaf et
+        ses méthodes. L'objet pathlib.Path sera en effet directement
+        appelé !!!
+
+        Toutes les fonctions PATHLIB sont alors disponibles, en tout
+        cas pour celles au niveau d'une instance ( ie du même niveau
+        que nos objets FileSystemLeaf ). Pour les méthodes de classe
+        ( telles cwd(), home(), ... ), elles doivent être codées au
+        niveau de notre classe FileSystemTree.
+    """
+
+    def __init__(
+        self,
+        walking_mode: str = walking_via_listdir,
+        with_pathlib: str = pathlib_ignore,
+        with_fnmatch: bool = False,
+        with_glob: bool = False,
+        log: logging.Logger = None
+        ):
+        """
+        :param walking_mode: si cet objet n'utilise que le module
+        OS.PATH, pour parcourir 1 répertoire utilisera-t-il la fct
+        os.listdir() ou os.scandir() ?
+
+            * walking_via_listdir : os.listdir() utilisée.
+
+            * walking_via_scandir : os.scandir() utilisée.
+
+            * walking_ignore : peu importe ( cas où module PATHLIB
+            est utilisé pour gérer les fichiers... ) et, si nous
+            arrivons tout de même dans une partie de code utilisant
+            cette informat°, la méthode par défaut ( ie os.listdir()
+            sera utilisée ).
+
+            RQ = Cf FileSystemTree.FileSystemLeaf.iterdir()
+
+            RQ = Si les modules GLOB ou FNMATCH sont importés, cela
+            n'impose pas le walking_mode et il faut le spécifier !
+
+        :param with_pathlib: cet objet va-t-il utiliser PATHLIB ou
+        simplement se servir de la librairie OS.PATH ? Les valeurs
+        autorisées pour « with_pathlib » sont :
+
+            * pathlib_ignore ( None ) : nous n'utiliserons pas le
+            module PATHLIB.
+
+            * pathlib_direct : nous utiliserons le module PATHLIB &
+            notre méthode FileSystemTree.node() renverra directement
+            des objets de type pathlib.Path, sans filtre.
+
+            * pathlib_deeply : nous utiliserons le module PATHLIB &
+            notre méthode FileSystemTree.node() renverra des objets
+            de type FileSystemLeaf ( qui inqueront eux-même 1 objet
+            pathlib.Path interne ).
+
+        :param with_fnmatch: cet objet peut-il utiliser FNMATCH ?
+
+        :param with_glob: cet objet peut-t-il utiliser GLOB ?
+
+        :param log: identifiant d'un fichier de journalisation des
+        messages, s'il en existe un.
+        """
+
+        self.write_in_log = None
+        self.register_log(log)
+        log_debug = self.write_in_log
+
+        # On importe les modules PATHLIB, FNMATCH et GLOB si tel
+        # doit être le cas.
+        #
+        log_debug("Configuration de la GESTION des FICHIERS :")
+        log_debug('==========================================')
+
+        self.walking_mode = walking_mode
+
+        log_debug('\tWALKING MODE\t= ' + str(walking_mode))
+
+        self.with_pathlib = with_pathlib
+        self.pathlib_import = not (with_pathlib == pathlib_ignore)
+        self.pathlib_direct = (with_pathlib == pathlib_direct)
+        if self.pathlib_import:
+
+            global pathlib
+            try: pathlib.PurePath()
+            except AttributeError: import pathlib
+
+        log_debug('\tPATHLIB\t\t= ' + str(pathlib))
+
+        self.with_fnmatch = with_fnmatch
+        if with_fnmatch:
+
+            global fnmatch
+            try: fnmatch.translate('test_if*already_imported')
+            except AttributeError: import fnmatch
+
+        log_debug('\tFNMATCH\t\t= ' + str(fnmatch))
+
+        self.with_glob = with_glob
+        if with_glob:
+
+            global glob
+            try: glob.iglob('test_if*already_imported')
+            except AttributeError: import glob
+
+        log_debug('\tGLOB\t\t= ' + str(glob))
+        log_debug('')
+ 
+
+    def register_log(
+        self,
+        log: logging.Logger = None
+        ):        
+        """ Pour affecter un ( nouveau ) fichier JOURNAL
+        à l'enregistrement de nos événements.
+        """
+
+        if log is None:
+            log_debug = _show_
+        else:
+            log_debug = log.debug
+
+        self.write_in_log = log_debug
+
+
+    def cwd(self) -> os.PathLike:
+        # -> STR [ ou ] PATHLIB.PATH
+        """ Pour connaître le RÉPERTOIRE de TRAVAIL.
+
+        RQ : Les méthodes de classe ( telles cwd() ou home() )
+        doivent être codées au niveau de FileSystemTree, et ce
+        quel que soit le module sous-jacent utilisé pour gérer
+        les fichiers et répertoires ( OS.PATH, PATHLIB, ...).
+        Rechercher « classmethod » dans :
+
+            https://docs.python.org/fr/3/library/pathlib.html
+
+        :return: le répertoire de travail, au format STRING ou
+        PATHLIB.PATH...
+        """
+
+        if self.pathlib_import:
+            return pathlib.Path.cwd()
+
+        else:
+            return os.getcwd()
+  
+
+    def home(self) -> os.PathLike:
+        # -> STR [ ou ] PATHLIB.PATH
+        """ Pour connaître le RÉPERTOIRE de l'UTILISATEUR.
+
+        RQ : Les méthodes de classe ( telles cwd() ou home() )
+        doivent être codées au niveau de FileSystemTree, et ce
+        quel que soit le module sous-jacent utilisé pour gérer
+        les fichiers et répertoires ( OS.PATH, PATHLIB, ...).
+        Rechercher « classmethod » dans :
+
+            https://docs.python.org/fr/3/library/pathlib.html
+
+        :return: le « home directory », au format STRING ou au
+        format PATHLIB.PATH...
+        """
+
+        if self.pathlib_import:
+            return pathlib.Path.home()
+
+        else:
+            # RQ : Sous Windows, on ne peut pas invoquer le seul
+            # os.environ['HOMEPATH'] car ce dernier renvoie qqch
+            # comme '\\Users\\bonzz', au lieu de 'C:\\Users\\...'.
+            # Il manque donc le disque dans la réponse, et il faut
+            # également se référer à HOMEDRIVE.
+            #
+            #   Sous Unix, la / les variable(s) d'environnement
+            # sont différentes...
+            #
+            #   Bref, autant utiliser expanduser('~') !!!
+            #
+            return os.path.expanduser('~')
+
+
+    def node(
+        self,
+        location: os.PathLike = None
+        ) -> object:
+        # -> FileSystemLeaf [ ou ] PATHLIB.PATH
+        """ Pour créer un objet de GESTION d'un NOEUD du système
+        de fichiers ( fichiers ou répertoires ), afin de pouvoir
+        accéder à ce noeud et / ou le manipuler.
+
+        Si nous sommes en mode « pathlib_direct », cette méthode
+        renverra 1 objet de type « pathlib.Path » & notre classe
+        interne FileSystemLeaf ne sera donc pas utilisée pour la
+        gestion du système de fichiers.
+
+        Dans tous les autres cas, FileSystemLeaf sera l'objet qui
+        permettra d'accéder au noeud défini par « location ». Cet
+        objet appelera les fonctions adéquates des modules OS.PATH
+        ou PATHLIB.
+
+        Cf https://docs.python.org/3/library/pathlib.html#correspondence-to-tools-in-the-os-module
+
+        :param location: la localisation du fichier ou répertoire
+        à gérer. Cette donnée peut-être au format « string » voire
+        « pathlib.Path ».
+
+        :param return: l'objet pour GESTION du répertoire ou du
+        fichier sous-jacent.
+        """
+
+        # Si aucune localisation n'est indiquée, nous considérons
+        # qu'il s'agit du répertoire courant.
+        #        
+        if location is None or location == '':
+            location = '.'
+
+        # Si l'on travaille en direct avec le module PATHLIB, alors
+        # on renvoie l'objet PATHLIB créé, ce qui va shunter notre
+        # classe FileSystemLeaf & ses méthodes. L'objet pathlib.Path
+        # sera en effet directement appelé !!!
+        #
+        # Toutes les fonctions PATHLIB sont alors disponibles, en tout
+        # cas pour celles au niveau d'une instance. Pour les méthodes
+        # de classe ( cwd(), home(), ... ), elles doivent être codées
+        # au niveau de notre classe FileSystemTree.
+        #
+        # => Rechercher « classmethod » dans :
+        #
+        #   https://docs.python.org/fr/3/library/pathlib.html
+        #
+        if self.pathlib_direct:
+            return pathlib.Path(location)
+
+        # Nous créons sinon un objet FileSystemLeaf, dont la tâche
+        # sera d'encapsuler le module OS.PATH ou le module PATHLIB.
+        # La tâche de cet objet FileSystemLeaf est d'offrir une API
+        # ( interface ) similaire à celle de PATHLIB ( au moins pour
+        # les méthodes implémentées dans FileSystemLeaf : les autres
+        # fonctions de PATHLIB ne seront pas disponibles tant que non
+        # présentes parmi les méthodes de FileSystemLeaf ).
+        #
+        else:
+            return self.FileSystemLeaf(self, location)
+
+
+    class FileSystemLeaf:
+        """ FileSystemLeaf est une classe d'objets qui permettent
+        d'accéder à un noeud ( fichier, répertoire ) du système de
+        fichiers. Cet objet appelle la fonction adéquate du module
+        sous-jacent ( OS.PATH ou PATHLIB ).
+
+        ATTENTION : Lorsque nous sommes en mode « pathlib_direct »,
+        cette classe n'est pas utilisée pour la gestion du système
+        de fichiers. FileSystemTree ne manipulera que des objets du
+        type « pathlib.Path ».
+
+        REMARQUE : Par CONVENTION, les méthodes de FileSystemLeaf
+        sont IDENTIQUES ( i.e même nom, même définition ) à celles
+        équivalents présentes dans PATHLIB. Nous avons choisi de
+        coder la même API ( interface ).
+
+            Cf https://docs.python.org/3/library/pathlib.html#correspondence-to-tools-in-the-os-module
+
+        REMARQUE : J'aurais pu « désindenter » cette classe afin
+        d'en faire une classe à part entière, non incluse, mais
+        j'ai préféré garder cette construction car FileSystemLeaf
+        n'est utilisée qu'avec FileSystemTree...
+
+        J'ai donc gardé ce système de « nested class », bien qu'il
+        soit peu utilisé en Python, à part pour créer des itérateurs.
+
+        Cf :
+
+            https://stackoverflow.com/questions/30376127/is-it-a-good-practice-to-nest-classes
+            ( Most Python developers do not nest classes, so when you do so you break convention and increase maintenance cost )
+
+            http://www.xavierdupre.fr/app/teachpyx/helpsphinx/c_classes/classes.html#classe-incluse
+
+        ATTENTION : Pour des restrictions dans la gestions des PATHS
+        ABSOLUS et RELATIFS, cf l'entête de notre méthode resolve()
+        où est expliqué l'une des restrictions de FileSystemLeaf ie
+        cf :
+                « ATTENTION = Lorsqu'un path n'est pas absolu »
+
+        Il y est ainsi suggéré une évolution de FileSystemLeaf...
+        """
+
+        # La définition suivante :
+        #
+        #   def __init__(self, tree: FileSystemTree, location):
+        #
+        # ... provoque à l'exécution l'erreur :
+        #
+        #   File "K:\_Know\Info\Dvpt\Réalisation\Src\_Python\[ skeleton ]\skeleton { SRC }.py", line 330, in FileSystemLeaf
+        #       def __init__(self, tree: FileSystemTree, location):
+        #       NameError: name 'FileSystemTree' is not defined
+        #
+        # Il y a donc un problème de visibilité du nom de la classe
+        # FileSystemTree dans sa classe incluse FileSystemLeaf ( ie
+        # « nested class » ou « inner class » ).
+        #
+        # Je n'ai pas trouvé la notation qui permettrait de spécifier
+        # que le paramètre « tree » ci-dessous est une instance de la
+        # classe FileSystemTree.
+        #
+        # J'ai donc adopté la définition ci-dessous, plus floue qui,
+        # elle, fonctionne bien.
+        #
+        def __init__(
+            self,
+            tree: object,
+            location: os.PathLike
+            ):
+            """
+            :param tree: l'objet FileSystemTree dont nous dépendons.
+
+            :param location: la localisation ( sous forme de STRING
+            ou de pathlib.PATH ) de l'objet que nous représentons.
+            """
+
+            self.tree = tree
+
+            # Si nous parcourons un répertoire en utilisant OS.PATH
+            # [ cf notre méthode iterdir() ], le ferons-nous via la
+            # la fonction os.listdir() ou via os.scandir() ?
+            #
+            self.walking_mode = tree.walking_mode
+
+            # Cf https://docs.python.org/3/library/os.html#os.fspath
+            #
+            # os.fspath(path)
+            # Return the file system representation of the path.
+            #
+            # +
+            #
+            # Quel que soit le type de « location » ( pathlib.Path,
+            # str, ... ) l'affectation suivante fonctionnera.
+            #
+            self.location_string = str(os.fspath(location))
+
+            if tree.pathlib_import:
+                # Lorsque nous nous trouvons ici, alors notre mode
+                # d'exécution est « pathlib_deeply ».
+                #
+                # Ainsi, nous utilisons le module PATHLIB, mais pas
+                # directement. Un objet FileSystemLeaf est créé afin
+                # d'accéder et / ou manipuler un noeud du système de
+                # fichiers.
+                #
+                # Nous créons ( ou enregistrons ) l'objet interne, de
+                # type pathlib.Path, qui va nous permettre toutes ces
+                # manipulations via des appels à ses méthodes.
+                #
+                if isinstance(location, str):
+                    self.location_object = pathlib.Path(location)
+
+                elif isinstance(location, pathlib.PurePath):
+                    self.location_object = location
+
+                else:
+                    raise TypeError(
+                        "Argument should be a str object or a Path"
+                        " object, not {}".format(type(location))
+                        )
+
+            else:
+                # Nous sommes ici dans le mode « pathlib_ignore »,
+                # donc pas d'objet interne à créer ou enregistrer.
+                #
+                self.location_object = None
+
+
+        def __str__(self) -> str:
+            """ Return the string representation of the path, suitable
+            for passing to system calls.
+            """
+
+            return self.location_string
+
+
+        def __truediv__(
+            self,
+            path: os.PathLike
+            ) -> object:
+            # -> FileSystemLeaf [ ou ] NotImplemented
+            """ Tout comme dans PATHLIB, nous utilisons l'opérateur de
+            division ( / ) pour concaténer des localisations ( path ).
+
+            Ainsi :
+
+                FileSystemLeaf(« Z:\woah_wouh\ ») / str(« ESSAI_n°4 »)
+
+                = FileSystemLeaf(« Z:\woah_wouh\ESSAI_n°4 »)
+            """
+
+            if self.tree.pathlib_import:
+                # Lorsque nous nous trouvons ici, alors notre mode
+                # d'exécution est « pathlib_deeply ».
+                #
+                # Ainsi, nous utilisons le module PATHLIB, mais pas
+                # directement. Un objet FileSystemLeaf est créé afin
+                # d'accéder et / ou manipuler un noeud du système de
+                # fichiers, via les méthodes du module PATHLIB.
+                #
+                return FileSystemTree.FileSystemLeaf(
+                    self.tree,
+                    self.location_object.__truediv__(path)
+                    )
+
+            elif isinstance(path, str):
+                # Nous sommes ici dans le mode « pathlib_ignore » et
+                # nous n'utilisons que les fonctions de OS.PATH pour
+                # émuler les méthodes de PATHLIB.
+                #
+                try:
+                    return FileSystemTree.FileSystemLeaf(
+                        self.tree,
+                        os.path.join(self.location_string, path)
+                        )
+
+                except TypeError:
+                    return NotImplemented
+
+            else:
+                return NotImplemented
+
+
+        def __rtruediv__(
+            self,
+            path: os.PathLike
+            ) -> object:
+            # -> FileSystemLeaf [ ou ] NotImplemented
+            """ Tout comme dans PATHLIB, nous utilisons l'opérateur de
+            division ( / ) pour concaténer des localisations ( path ).
+
+            Ainsi :
+
+                str(« Z:\woah_wouh\ ») / FileSystemLeaf(« ESSAI_n°4 »)
+
+                = FileSystemLeaf(« Z:\woah_wouh\ESSAI_n°4 »)
+            """
+
+            if self.tree.pathlib_import:
+                # Lorsque nous nous trouvons ici, alors notre mode
+                # d'exécution est « pathlib_deeply ».
+                #
+                # Ainsi, nous utilisons le module PATHLIB, mais pas
+                # directement. Un objet FileSystemLeaf est créé afin
+                # d'accéder et / ou manipuler un noeud du système de
+                # fichiers, via les méthodes du module PATHLIB.
+                #
+                return FileSystemTree.FileSystemLeaf(
+                    self.tree,
+                    self.location_object.__rtruediv__(path)
+                    )
+
+            elif isinstance(path, str):
+                # Nous sommes ici dans le mode « pathlib_ignore » et
+                # nous n'utilisons que les fonctions de OS.PATH pour
+                # émuler les méthodes de PATHLIB.
+                #
+                try:
+                    return FileSystemTree.FileSystemLeaf(
+                        self.tree,
+                        os.path.join(path, self.location_string)
+                        )
+
+                except TypeError:
+                    return NotImplemented
+
+            else:
+                return NotImplemented
+
+
+        def is_dir(self) -> bool:
+            """ Sommes-nous un RÉPERTOIRE ?
+            """
+
+            if self.tree.pathlib_import:
+                # Lorsque nous nous trouvons ici, alors notre mode
+                # d'exécution est « pathlib_deeply ».
+                #
+                # Ainsi, nous utilisons le module PATHLIB, mais pas
+                # directement. Un objet FileSystemLeaf est créé afin
+                # d'accéder et / ou manipuler un noeud du système de
+                # fichiers, via les méthodes du module PATHLIB.
+                #
+                return self.location_object.is_dir()
+
+            else:
+                # Nous sommes ici dans le mode « pathlib_ignore » et
+                # nous n'utilisons que les fonctions de OS.PATH pour
+                # émuler les méthodes de PATHLIB.
+                #
+                return os.path.isdir(self.location_string)
+
+
+        def is_file(self) -> bool:
+            """ Sommes-nous un FICHIER ?
+            """
+
+            if self.tree.pathlib_import:
+                # Lorsque nous nous trouvons ici, alors notre mode
+                # d'exécution est « pathlib_deeply ».
+                #
+                # Ainsi, nous utilisons le module PATHLIB, mais pas
+                # directement. Un objet FileSystemLeaf est créé afin
+                # d'accéder et / ou manipuler un noeud du système de
+                # fichiers, via les méthodes du module PATHLIB.
+                #
+                return self.location_object.is_file()
+
+            else:
+                # Nous sommes ici dans le mode « pathlib_ignore » et
+                # nous n'utilisons que les fonctions de OS.PATH pour
+                # émuler les méthodes de PATHLIB.
+                #
+                return os.path.isfile(self.location_string)
+
+
+        def exists(self) -> bool:
+            """ Existons-nous PHYSIQUEMENT ?
+            """
+
+            if self.tree.pathlib_import:
+                # Lorsque nous nous trouvons ici, alors notre mode
+                # d'exécution est « pathlib_deeply ».
+                #
+                # Ainsi, nous utilisons le module PATHLIB, mais pas
+                # directement. Un objet FileSystemLeaf est créé afin
+                # d'accéder et / ou manipuler un noeud du système de
+                # fichiers, via les méthodes du module PATHLIB.
+                #
+                return self.location_object.exists()
+
+            else:
+                # Nous sommes ici dans le mode « pathlib_ignore » et
+                # nous n'utilisons que les fonctions de OS.PATH pour
+                # émuler les méthodes de PATHLIB.
+                #
+                return os.path.exists(self.location_string)
+
+
+        @property
+        def drive(self) -> str:
+            """ Quel est notre DISQUE ?
+            """
+
+            if self.tree.pathlib_import:
+                # Lorsque nous nous trouvons ici, alors notre mode
+                # d'exécution est « pathlib_deeply ».
+                #
+                # Ainsi, nous utilisons le module PATHLIB, mais pas
+                # directement. Un objet FileSystemLeaf est créé afin
+                # d'accéder et / ou manipuler un noeud du système de
+                # fichiers, via les méthodes du module PATHLIB.
+                #
+                return self.location_object.drive
+
+            else:
+                # Nous sommes ici dans le mode « pathlib_ignore » et
+                # nous n'utilisons que les fonctions de OS.PATH pour
+                # émuler les méthodes de PATHLIB.
+                #
+                drive, _ = os.path.splitdrive(self.location_string)
+                return drive
+
+
+        @property
+        def name(self) -> str:
+            """ Quel est notre NOM ?
+            ( sans mention de l'arborescence mais extension incluse
+            pour les fichiers )
+            """
+
+            if self.tree.pathlib_import:
+                # Lorsque nous nous trouvons ici, alors notre mode
+                # d'exécution est « pathlib_deeply ».
+                #
+                # Ainsi, nous utilisons le module PATHLIB, mais pas
+                # directement. Un objet FileSystemLeaf est créé afin
+                # d'accéder et / ou manipuler un noeud du système de
+                # fichiers, via les méthodes du module PATHLIB.
+                #
+                return self.location_object.name
+
+            else:
+                # Nous sommes ici dans le mode « pathlib_ignore » et
+                # nous n'utilisons que les fonctions de OS.PATH pour
+                # émuler les méthodes de PATHLIB.
+                #
+                name_without_dir = os.path.basename(self.location_string)
+                return name_without_dir
+
+
+        @property
+        def stem(self) -> str:
+            """ Quel est notre NOM ?
+            ( sans mention de l'arborescence ET extension exclue pour
+            les fichiers )
+            """
+
+            if self.tree.pathlib_import:
+                # Lorsque nous nous trouvons ici, alors notre mode
+                # d'exécution est « pathlib_deeply ».
+                #
+                # Ainsi, nous utilisons le module PATHLIB, mais pas
+                # directement. Un objet FileSystemLeaf est créé afin
+                # d'accéder et / ou manipuler un noeud du système de
+                # fichiers, via les méthodes du module PATHLIB.
+                #
+                return self.location_object.stem
+
+            else:
+                # Nous sommes ici dans le mode « pathlib_ignore » et
+                # nous n'utilisons que les fonctions de OS.PATH pour
+                # émuler les méthodes de PATHLIB.
+                #
+                stem, _ = os.path.splitext(self.name)
+                return stem
+
+
+        @property
+        def suffix(self) -> str:
+            """ Quel est notre EXTENSION ?
+            """
+
+            if self.tree.pathlib_import:
+                # Lorsque nous nous trouvons ici, alors notre mode
+                # d'exécution est « pathlib_deeply ».
+                #
+                # Ainsi, nous utilisons le module PATHLIB, mais pas
+                # directement. Un objet FileSystemLeaf est créé afin
+                # d'accéder et / ou manipuler un noeud du système de
+                # fichiers, via les méthodes du module PATHLIB.
+                #
+                return self.location_object.suffix
+
+            else:
+                # Nous sommes ici dans le mode « pathlib_ignore » et
+                # nous n'utilisons que les fonctions de OS.PATH pour
+                # émuler les méthodes de PATHLIB.
+                #
+                _, extension = os.path.splitext(self.location_string)
+                return extension
+
+
+        #def resolve(self) -> FileSystemLeaf:
+        #def resolve(self) -> FileSystemTree.FileSystemLeaf:
+        #
+        # Les 2 définitions ci-dessus génèrent un plantage du script
+        # dès sa lecture par Python ( sans même exécution... ) :
+        #
+        #   . NameError: name 'FileSystemLeaf' is not defined
+        #   . NameError: name 'FileSystemTree' is not defined
+        #
+        # ... d'où la définition ci-dessous.
+        #
+        def resolve(self) -> object:
+            """ Cette fonction émule la méthode pathlib.Path.resolve()
+            et renvoie donc un objet qui contient un PATH ABSOLU :
+
+            « Make the path absolute, resolving all symlinks on the way
+            and also normalizing it (for example turning slashes into
+            backslashes under Windows). »
+
+            Nous avons choisi d'émuler cette méthode plutôt que l'autre
+            méthode transformant un path relatif en path absolu ( c-a-d
+            pathlib.Path.absolute() ) car nous voulions forcer la réponse
+            sous la forme d'un path ABSOLU simple, normalisé.
+
+            Or, pathlib.Path.absolute() fournit parfois des réponses du
+            type :
+
+                K:\_Know\Info\Dvpt\Réalisation\Src\_Python\[ skeleton ]\..\all files to one PDF\skeleton.py
+
+            Cf Python310\lib\pathlib.py :
+
+                def absolute(self):
+                [..] Return an absolute version of this path.  This function
+                works even if the path doesn't point to anything.
+
+                No normalization is done, i.e. all '.' and '..' will be kept
+                along. Use resolve() to get the canonical path to a file.
+
+            Avec la méthode resolve(), par contre :
+
+                « “..” components are also eliminated (this is the only method to do so) »
+
+                Cf https://docs.python.org/3/library/pathlib.html#pathlib.Path.resolve
+
+            ... et le résultat ci-dessus serait normalisé en :
+
+                K:\_Know\Info\Dvpt\Réalisation\Src\_Python\all files to one PDF\skeleton.py
+
+            C'est donc elle que nous utilisons.
+
+            :return: Un objet FileSystemLeaf contenant un path absolu
+            et normalisé.
+            
+            ATTENTION = Lorsqu'un path n'est pas absolu, la fonction
+            os.path.abspath() renvoie un chemin ayant pour référence
+            le répertoire courant. Si ce n'était pas le répertoire
+            réel de référence de cet objet FileSystemLeaf, le calcul
+            du résultat sera alors FAUX !!!
+
+            Cf https://docs.python.org/3/library/os.path.html#os.path.abspath
+
+                « Return a normalized absolutized version of the pathname path.
+                On most platforms, this is equivalent to calling the function
+                normpath() as follows: normpath(join(os.getcwd(), path)). »
+
+            DONC même si nous émulons la méthode pathlib.Path.resolve()
+            nous travaillons plutôt comme la méthode pathlib.absolute() :
+
+                Cf Python310\lib\pathlib.py
+
+                def absolute(self):
+                [..]
+                    return self._from_parts([self._accessor.getcwd()] + self._parts)
+
+            Pour faire mieux, il nous faudrait changer la structure de
+            données de FileSystemLeaf et scanner / conserver toutes les
+            parties du chemin qu'elle représente ( tout comme cela est
+            fait dans PATHLIB en fait !!! ).
+
+            Il faudrait, si nous ne sommes PAS ABSOLUS, conserver notre
+            PATH de RÉFÉRENCE ie quel était le chemin courant / de travail
+            / référent ( explicite ou sous entendu ) quand nous avons été
+            créé...
+
+            Par exemple, si nous sommes issus d'un appel à une méthode type
+            ITERDIR(), scandir() ou autres, il nous faudrait conserver le
+            PATH ABSOLU du répertoire ainsi parcouru...
+            """
+
+            # Si nous possédons déjà un PATH ABSOLU, rien à faire...
+            #
+            if os.path.isabs(self.location_string):
+
+                return self
+
+
+            # XXX --- FIX ME ---
+            #
+            # Notre méthode resolve() souffre d'un PB de repère ( i-e
+            # elle ne sait calculer les paths absolus que par rapport
+            # au path courant ) tel que c'est expliqué ci-dessus dans
+            # son cartouche.
+            #
+            # Actuellement, l'unique endroit où cette méthode .resolve()
+            # est susceptible d'être appelée se situe dans notre méthode
+            # _fake_iglob() à :
+            #
+            #   yield str(file_or_dir.resolve())
+            #
+            # ... mais, à cet endroit, nous sommes sûrs que l'objet en
+            # question dispose déjà d'un path ABSOLU, donc pas de pb.
+            # Ce cas est traité par le « return self » ci-dessus, nous
+            # ne devrions donc, actuellement, JAMAIS ATTEINDRE le code
+            # ci-dessous !!!
+            #
+            # D'ailleurs, .resolve est invoquée à l'endroit en question
+            # uniquement au cas où l'objet ne soit pas un FileSystemLeaf
+            # mais un objet de type pathlib.PATH...
+            #
+            # Les lignes ci-dessous ne seront donc atteintes que si nous
+            # utilisons notre méthode .resolve() ailleurs, sans avoir pris
+            # garde de modifier le code de FileSystemLeaf.
+            #
+            log_debug = self.tree.write_in_log
+
+            log_debug('\tATTENTION : Suite à un problème de structure de données,')
+            log_debug('\t< FileSystemLeaf >.resolve() ne sait PAS garantir un PATH')
+            log_debug('\tabsolu CORRECT... !!!')
+            log_debug('')
+            log_debug('\tCf les remarques contenues dans « skeleton { SRC }.py » à :')
+            log_debug('')
+            log_debug("\t\t« ATTENTION = Lorsqu'un path n'est pas absolu »")
+
+            if __debug__:
+                
+                raise NotImplementedError
+
+
+            # Hors déboggage, nous ne terminons pas le script sur ce
+            # problème, nous notons tout simplement dans notre log
+            # celui-ci, puis advienne que pourra !!!
+            #
+            # Nous renvoyons ainsi un nouvel objet construit sur un
+            # path que nous espérons CORRECT, avec les restrictions
+            # exposées ci-dessus dans le cartouche de cette fonction.
+            #
+            log_debug('')
+            log_debug('\tNous ne terminons pas le script pour autant.')
+
+            return FileSystemTree.FileSystemLeaf(
+                        self.tree,
+                        os.path.abspath(self.location_string)
+                        )
+
+
+        def iterdir(self) -> object:
+            # ( itérateur / générateur ) -> FileSystemLeaf [ ou ] PATHLIB.PATH
+            """Iterate over the files in this directory. Does not
+            yield any result for the special paths '.' and '..'.
+
+            Cette fonction renvoie un GÉNÉRATEUR ( ie un ITÉRATEUR
+            créé grâce à l'instruction YIELD présente dans son code ).
+
+            Ce générateur renvoie alors une suite de données soit de
+            type FileSystemLeaf, soit de type PATHLIB.PATH.
+
+            Pour être plus précis, iterdir() renvoie, dans certains
+            cas, directement un itérateur :
+
+                . si notre mode d'exécution est « pathlib_deeply »,
+                alors nous renvoyons directement le résultat de la
+                méthode pathlib.Path.iterdir().
+
+                . si notre mode d'exécution est « pathlib_direct »,
+                cette méthode < FileSystemLeaf >.iterdir() ne sera
+                pas appelée, pathlib.Path.iterdir() va la shunter
+                et donc ce sera aussi directement un itérateur qui
+                donnera les résultats.
+
+            Mais que ce soit un GÉNÉRATEUR ou un ITÉRATEUR, c'est
+            transparent pour notre appelant : dans les 2 cas, il
+            verra défiler soit une suite de FileSystemLeaf, soit
+            une suite de variables PATHLIB.PATH.
+
+            Cf :
+
+                https://docs.python.org/3/library/os.html#os.listdir
+                https://docs.python.org/3/library/os.html#os.scandir
+                https://docs.python.org/3/library/pathlib.html#pathlib.Path.iterdir
+
+            :return: les valeurs retournées par l'itérateur seront
+            une suite soit de FileSystemLeaf, soit de PATHLIB.PATH.
+
+                Lorsqu'il s'agit de variables FileSystemLeaf, nous
+                nous assurons que la valeur retournée contienne un
+                PATH ABSOLU.
+
+                Si les données retournées sont de type PATHLIB.PATH
+                alors ce sera le comportement intrinsèque du module
+                PATHLIB qui définira s'il s'agit de PATHS ABSOLUS ou
+                RELATIFS. En effet, dans ce cas, les résultats seront
+                directement ceux de la méthode pathlib.Path.iterdir(),
+                que ce soit en mode « pathlib_deeply » ( mode que nous
+                pourrions contrôler via < FileSystemLeaf >.iterdir() )
+                ou en « pathlib_direct » ( mode que nous ne savons pas
+                contrôler puisque direct : d'où le choix de conserver
+                le fonctionnement intrinsèque de PATHLIB ).
+
+                RQ : pathlib.Path(x).iterdir() donne 1 suite de paths
+                ABSOLUS si son paramètre « x » est absolu. Le résultat
+                sera un path RELATIF sinon.
+
+                Il suffit de comparer sous IDLE les résultats de :
+
+                    for i in pathlib.Path('K:\\_Backup.CDs').iterdir(): print(i)
+                    for i in pathlib.Path('..').iterdir(): print(i)
+                    for i in pathlib.Path().iterdir(): print(i)
+
+                ... pour s'en convaincre.
+            """
+
+            log_debug = self.tree.write_in_log
+
+            if self.tree.pathlib_import:
+
+                # Lorsque nous nous trouvons ici, alors notre mode
+                # d'exécution est « pathlib_deeply ».
+                #
+                # Ainsi, nous utilisons le module PATHLIB, mais pas
+                # directement. Un objet FileSystemLeaf est créé afin
+                # d'accéder et / ou manipuler un noeud du système de
+                # fichiers, via les méthodes du module PATHLIB.
+                #
+                log_debug('ITÉRATEUR = pathlib.iterdir()')
+                generator = self.location_object.iterdir()
+
+
+            # Nous sommes ici dans le mode « pathlib_ignore » et
+            # nous n'utilisons que les fonctions de OS.PATH pour
+            # émuler les méthodes de PATHLIB.
+            #
+            elif self.walking_mode == walking_via_scandir:
+
+                # La fonction os.scandir() renvoie un itérateur mais
+                # nous ne pouvons simplement en faire notre valeur de
+                # retour ( tel « self.location_object.iterdir() » ci-
+                # dessus ).
+                #
+                # En effet, notre appelant s'attend à recevoir 1 path,
+                # or l'itérateur de os.scandir fourni des valeurs de
+                # type « os.DirEntry ».
+                #
+                # Il nous faut donc retraiter les valeurs fournies par
+                # cet itérateur ( via os.DirEntry.path ) puisque, qui
+                # plus est, nous avons fait le choix d'alimenter notre
+                # appelant en chemins absolus.
+                #
+                # Cf https://docs.python.org/3/library/os.html#os.DirEntry
+                # Cf https://docs.python.org/3/library/os.html#os.scandir
+                #
+                # Return an iterator of os.DirEntry objects corresponding
+                # to the entries in the directory given by path. The entries
+                # are yielded in arbitrary order, and the special entries '.'
+                # and '..' are not included.
+                #
+                log_debug('ITÉRATEUR = os.scandir()')
+                iterator = os.scandir(path = self.location_string)
+
+                # « x » sera de type os.DirEntry, il connaîtra donc son
+                # répertoire et le fournira à os.path.abspath().
+                #
+                # Pas besoin donc d'écrire :
+                #
+                #   yield os.path.abspath(os.path.join(..))
+                #
+                # ... comme c'est le cas ci-dessous avec la fonct°
+                # os.path.listdir().
+                #
+                # Cf les tests présents dans :
+                #
+                #   Cf  --- FILES and PATH --- ( mes ) NOTES = path ABSOLU [ vs ] RELATIF in os, pathlib, fnmatch + CONCATÉNATION de paths absolu et relatif.txt
+                #   in _Know\Info\Dvpt\Réalisation\Langages\Python\- et - FICHIERS.rar
+                #
+                fct = lambda x: FileSystemTree.FileSystemLeaf(
+                        self.tree,
+                        os.path.abspath(x.path)
+                        )
+
+                generator = _generator_create(iterator, fct)
+
+
+            else:
+
+                # Nous allons parcourir le répertoire via la fonction
+                # os.listdir() ( qui est donc la fonction par DÉFAUT
+                # puisqu'elle est la dernière de cette séquence de IF
+                # ... ELIF ... ELSE ).
+                #
+                # Nous pouvons ainsi éventuellement nous retrouver ici
+                # dans 1 cas « walking_ignore » qui serait mal maîtrisé
+                # et arriverait dans cette branche alors que, dans l'
+                # absolu, un tel cas signifie que nous utilisons autre
+                # chose que le module OS.PATH pour parcourir le système
+                # de fichiers...
+                #
+                log_debug('ITÉRATEUR = os.listdir()')
+                our_path = self.location_string
+                iterator = os.listdir(path = our_path)
+
+                # Nous renvoyons un chemin absolu car, après des
+                # tests, il est apparu que c'était le moyen le
+                # plus sûr de ne pas créer d'erreurs !!!
+                #
+                #   Cf * - TESTS --- ( pathlib.ITERDIR [ vs ] os.LISTDIR [ vs ] os.SCANDIR = PATH affiché en ABSOLU ou RELATIF ) ---.py
+                #   in --- [ skeleton ] = 2Do & NOTES.rar\( TESTS ) dont « mplay32.exe »
+                #   in _Know\Info\Dvpt\Réalisation\Src\_Python\[ skeleton ]
+                #
+                # ou
+                #
+                #   Cf --- FILES and PATH --- ( mes ) NOTES = pathlib.ITERDIR [ vs ] os.LISTDIR [ vs ] os.SCANDIR = PATH affiché en ABSOLU ou RELATIF ---.py
+                #   in _Know\Info\Dvpt\Réalisation\Langages\Python\- et - FICHIERS.rar
+                #
+                fct = lambda x: FileSystemTree.FileSystemLeaf(
+                        self.tree,
+                        os.path.abspath(
+                            os.path.join(
+                                our_path,
+                                x
+                                )
+                            )
+                        )
+
+                generator = _generator_create(iterator, fct)
+
+
+            # La PRÉSENCE de YIELD dans le reste de cette fonction
+            # impliquerait que le CODE de cette FONCTION ne SERAIT
+            # EXÉCUTÉ que LORSQUE le GÉNÉRATEUR serait PARCOURU d'1
+            # façon ( via un FOR ) ou d'1 autre ( via 1 liste... ).
+            #
+            # Il faut donc que cette fonction créé 1 générateur là
+            # où dans les fichiers précédents elle créait 1 liste
+            # et « yieldait » ( itérait ) sur cette liste.
+            #
+            # Il faut donc faire DISPARAÎTRE toute instruction YIELD
+            # du corps de cette fonction en les déménageant ailleurs
+            # ( dans 1 sous-fonction, dans 1 fonction globale, ... ) !!!
+            #
+            # Cf - GÉNÉRATEURS - Comment FONCTIONNE l'instruction YIELD *.py
+            # in - et - ITÉRATEUR ou GÉNÉRATEUR.rar
+            # in _Know\Info\Dvpt\Réalisation\Langages\Python
+            #
+            # Ici nous retournons donc bien le générateur créé ou
+            # l'itérateur qui existe déjà. C'est ainsi dans notre
+            # code que nous ne devons pas utiliser de YIELD mais
+            # plutôt renvoyer 1 itérateur / générateur !!!
+            #
+            return generator
+
+
+        def _parse_mask(
+            self,
+            mask: str = '*',
+            s_type: int = None
+            ) -> dict:
+            """ Analyse un masque de recherche destiné à _fake_iglob()
+            et renvoie un dictionnaire contenant le résultat de notre
+            analyse. Ce dictionnaire pourra ensuite être passé en tant
+            que paramètre à _fake_iglob() sous la forme :
+
+                _fake_iglob( .., **_parse_mask( .. ) )
+
+            :param mask: le masque de recherche & sont acceptés :
+
+                - « * » : tous les fichiers.
+
+                - « *.xxx » : les fichiers d'un certain type.
+
+                - « title*.m* » : masque plus complexe.
+
+                - n'importe quel masque interprétable via la méthode
+                fnmatch() du module FNMATCH si la valeur de « s_type »
+                est « _search_fnmatch ».
+
+            :param s_type: ce paramètre n'a à être fourni que si nous
+            désirons forcer la lecture du masque via le module FNMATCH
+            ( valeur _search_fnmatch ). Sinon, il ne sera pas pris en
+            compte.
+
+            :return: un dictionnaire résultant de notre analyse de mask
+            et qui peut être transmis à _fake_iglob().
+            """
+
+            log_debug = self.tree.write_in_log
+            log_debug(f'ANALYSE du masque de recherche « {mask} »')
+
+            mask_lst = None
+            test_fct = None
+
+
+            #
+            # NOUS ALLONS IDENTIFIER QUEL EST LE TYPE DE RECHERCHE.
+            #
+
+
+            # L'appelant veut forcer ponctuellement une recherche
+            # via le module FNMATCH...
+            #
+            if s_type == _search_fnmatch:
+
+                log_debug('On force une lecture du masque via FNMATCH !!!')
+
+                suffix = None
+
+                global fnmatch
+                try: fnmatch.translate('test_if*already_imported')
+                except AttributeError: import fnmatch
+
+                try: test_fct = _test_via_fnmatch
+                except NameError:
+
+                    # On testera le nom du fichier ou du répertoire
+                    # via le module FNMATCH.
+                    #
+                    # Nous n'avons donc besoin que du nom et de la
+                    # valeur du masque dans ce cas, tout autre data
+                    # est ignorée...
+                    #
+                    def _test_via_fnmatch(
+                        name: str,
+                        mask: str,
+                        **kwargs
+                        ) -> bool:
+
+                        return fnmatch.fnmatch(name, mask)
+
+                    test_fct = _test_via_fnmatch
+
+
+            # Nous n'utilisons pas le module FNMATCH.
+            #
+            # On regarde si l'on est face à une recherche simple
+            # ( du type "*" ou "*.nnn" ) ou face à une recherche
+            # plus complexe ( du type "title*.m*" ).
+            #
+            # On a séparé ces 2 cas pour des raisons de performance
+            # mais le 1er n'est qu'un sous cas du 2nd & on pourrait
+            # donc les réunir ( si l'on veut plus de simplicité du
+            # code )...
+            #
+            # Actuellement, ce code est plus à visée didactique que
+            # pour une mise en production !!!
+            #
+            elif mask == '*':
+
+                # Cas d'1 chaîne de recherche très SIMPLE i-e : « * ».
+                #
+                suffix = ''
+                s_type = _search_simple
+                log_debug('Recherche de type SIMPLE !!!')
+                log_debug('On accepte ici tous les noms.')
+
+
+            elif mask[0] == '*' and not '*' in mask[1:]:
+
+                # Cas d'1 chaîne de recherche SIMPLE i-e : « *< suffix > ».
+                #
+                suffix = mask[1:]
+                s_type = _search_simple
+                log_debug('Recherche de type SIMPLE !!!')
+                log_debug(f"Recherche des noms avec l'extension : « {suffix} ».")
+
+
+            else:
+
+                # Cas d'1 chaîne de recherche COMPLEXE telle : « title*.m* ».
+                #
+                s_type = _search_complex
+
+                suffix_idx = mask.rfind('.')
+                if suffix_idx >= 0:
+                    suffix = mask[suffix_idx:]
+                else:
+                    suffix = ''
+
+                log_debug('Recherche de type COMPLEXE !!!')
+                log_debug(f'Recherche de noms du type : « {mask} ».')
+                log_debug(f'... donc avec « {suffix} » comme extension.')
+
+                # Conversion de la chaîne de recherche demandée en une liste afin
+                # de faciliter, par la suite, les comparaisons des noms de fichiers
+                # avec le masque de recherche...
+                #
+                # On découpe ainsi le masque de recherche en considérant le caractère
+                # joker '*' comme un délimiteur.
+                #
+                # PAR CONTRE, pour réaliser les comparaisons, on va convertir les
+                # éléments en minuscules...
+                #
+                # Cf ci-dessous « PAR CONTRE, pour réaliser la comparaison via rfind ».
+                #
+                mask_lst = mask.lower().split('*')
+                #
+                # Avant nous trouvions le même résultat via une expression beaucoup
+                # plus complexe :
+                #
+                #   mask_lst = list(map(str.lower, mask.split('*')))
+                #
+                log_debug(f'Le masque convertit en liste et minuscules vaut : {mask_lst}.')
+
+
+            #
+            # NOUS ALLONS CONSTRUIRE LA FONCTION DE TEST.
+            #
+
+
+            # En fonction du type de recherche qui a été identifié, on construit
+            # la FONCTION qui sera utilisée par _fake_iglob() pour TESTER si le
+            # nom d'un noeud ( fichier ou répertoire ) correspond au masque...
+            #
+            # Dans le cas d'une recherche type _search_fnmatch, cette fonction a
+            # déjà été affectée et construite ci-dessus, dès l'identification de
+            # la recherche. Ceci s'explique par le fait qu'une telle recherche
+            # ne donne lieu qu'à un seul cas d'identification, donc on peut dès
+            # ce cas définir la fonction...
+            #
+            # Pour les autres types de recherche, plusieurs branche du code sont
+            # suceptibles de donner la même recherche. On attend donc cet endroit
+            # du code pour définir la fonction de test, i-e une fois que toutes
+            # les branches ont été parcourues.
+
+
+            # FONCTION de TEST pour une RECHERCHE SIMPLE.
+            #
+            # On construit notre algorithme de recherche dite « SIMPLE » dans le
+            # répertoire. _fake_iglob() l'appelera avec les paramètres adéquats.
+            #
+            if s_type == _search_simple:
+
+                try: test_fct = _test_simple
+                except NameError:
+
+                    # Nous n'avons ici besoin que du nom, du masque, et de qq
+                    # infos sur le suffixe ( nous aurions pu recalculer lors de
+                    # chaque appel ces informations, mais au prix d'une perte de
+                    # temps & nous avons choisi de perdre de la mémoire plutôt ).
+                    #
+                    def _test_simple(
+                        name: str,
+                        mask: str,
+                        suffix_len: int,
+                        suffix_lower: int,
+                        **kwargs
+                        ) -> bool:
+
+                        # Si le fichier a le suffixe voulu, on l'intègre à la
+                        # liste.
+                        #
+                        # Pour ceci, le plus "universel" est de vérifier que
+                        # l'on trouve bien le suffixe cherché en toute fin du
+                        # nom du fichier et, pour réaliser ce test, on utilise
+                        # ici la méthode rfind().
+                        #
+                        # Cette fonction va trouver l'occurence, si elle existe,
+                        # du suffixe que nous cherchons et qui serait située la
+                        # plus à droite dans le nom du fichier. Si cette occurence
+                        # est trouvée, rfind() nous informe de l'index dans le nom
+                        # de fichier où l'on peut trouver cette occurence. Or si
+                        # cet index est égal à la soustraction de la longueur du
+                        # nom de fichier par la longueur du suffixe, c'est que le
+                        # suffixe est bien situé en toute fin du nom de fichier...
+                        #
+                        # PAR CONTRE, pour réaliser la comparaison via rfind, on
+                        # convertit d'abord les 2 chaînes en minuscules, et ceci
+                        # afin que, par exemple :
+                        #
+                        #       - si suffix = « .mkv » ;
+                        #
+                        #       - si certains fichiers finissent en « .mkv », d'
+                        #       autres en « .MKV », et d'autres en « .Mkv » ;
+                        #
+                        # ... alors tous ces fichiers ressortent dans la liste !
+                        #
+                        # ATTENTION : Avant, au regard de l'algorithme décrit ci-
+                        # dessus, le test effectué était :
+                        #
+                        #       if suffix == '' or \
+                        #       (file_or_dir.lower().rfind(suffix_lower) == len(file_or_dir) - len(suffix)):
+                        #
+                        # ... mais, pour des noms de fichiers courts, type « @i »,
+                        # ce test ( sa deuxième partie ) ne marchait pas avec, par
+                        # exemple, « *.py » :
+                        #
+                    	#	    - file_or_dir = @i
+                    	#	    - suffix_lower = .py
+                    	#	    - file_or_dir.lower().rfind(suffix_lower) = -1 [ car échec de la recherche ]
+                    	#	    - len(file_or_dir) - len(suffix) = 2 - 3 = -1
+                        #
+                        # ... d'où la réécriture de ce test ci-dessous.
+                        #
+                        # Ce teste marche d'ailleurs pour des données telles :
+                        #
+                        #       - masque = « *.py »
+                        #       - fichier = « .py »
+                        #
+                        name = name.lower()
+                        suffix_idx = name.rfind(suffix_lower)
+
+                        return suffix == '' or (
+                                    suffix_idx >= 0 and \
+                                    len(name) >= suffix_len and \
+                                    suffix_idx == len(name) - suffix_len
+                                    )
+
+                    test_fct = _test_simple
+
+
+            # FONCTION de TEST pour une RECHERCHE COMPLEXE.
+            #
+            # On construit notre algorithme de recherche dite « COMPLEXE » dans
+            # le répertoire. _fake_iglob l'appelera avec les paramètres adéquats.
+            #
+            elif s_type == _search_complex:
+
+                try: test_fct = _test_complex
+                except NameError:
+
+                    # Nous n'avons ici besoin que du nom, du masque, et de la
+                    # décomposition de ce masque en une liste ( nous aurions pu
+                    # recalculer lors de chaque appel cette liste, mais au prix
+                    # d'une perte de temps & nous avons choisi de perdre de la
+                    # mémoire plutôt ).
+                    #
+                    def _test_complex(
+                        name: str,
+                        mask: str,
+                        mask_lst: list,
+                        **kwargs
+                        ) -> bool:
+
+                        # Pour réaliser les comparaisons, on va convertir en le
+                        # nom en minuscules. Cf ci-dessus :
+                        #
+                        #   « PAR CONTRE, pour réaliser la comparaison via rfind ».
+                        #
+                        name = name.lower()
+                        node_ok = True
+
+                        # On va chercher si le nom du fichier contient chacune
+                        # des sous-chaînes de la liste correspondant au masque
+                        # de recherche.
+                        #
+                        # ATTENTION : On ne teste ici "que" si la sous-chaîne
+                        # se trouve dans le nom de fichier. Pour être plus exact,
+                        # il faudrait vérifier, quand le masque est de type :
+                        #
+                        #   « xxx*(..)*zzz »,
+                        #
+                        # ... si la 1ère sous-chaîne est bien le début ( et le
+                        # début exactement ) du nom de fichier en utilisant :
+                        #
+                        #   file_name.startswith(mask_part)
+                        #
+                        # ... mais également vérifier que la dernière sous-chaîne
+                        # est la fin ( et exactement la fin ) du nom de fichier,
+                        # en utilisant :
+                        #
+                        #   file_name.endswith(mask_part)
+                        #
+                        # Cela pourrait être l'objet d'1 développement ultérieur.
+                        #
+                        # Pour l'instant, ce n'est pas très dérangeant, donc on
+                        # laisse tel quel. Du coup, pour les masques ayant comme
+                        # type « xxx*(..)*zzz », cette fonction réalise en fait
+                        # une recherche du type :
+                        #
+                        #   « *xxx*(..)*zzz* »
+                        #
+                        # ADDENDUM : Le fait de réaliser une recherche du type
+                        # « *xxx*(..)*zzz* » alors que nous a été demandé une
+                        # recherche « xxx*(..)*zzz » est en fait plus dérangeant
+                        # que prévu. Ainsi, lors d'1 recherche ayant pour masque
+                        # « title_t*.mkv », les solutions suivantes sont sorties
+                        # à l'écran ( !!! ) :
+                        #
+                        #       - ( 2 ) what to encode - from « title_t00.mkv ».cfg
+                        #       - title_t03.mkv
+                        #       - >>> CRÉATION d'un fichier de configuration [..] <<<
+                        #
+                        # EXPLICATIONS : Nous avons demandé « title_t*.mkv » donc,
+                        # avec une recherche « xxx*(..)*zzz », seul "title_t03.mkv"
+                        # serait apparu.
+                        #
+                        # Mais nous avons réalisé 1 recherche « *xxx*(..)*zzz* »,
+                        # donc "( 2 ) what to encode - from « title_t00.mkv ».cfg"
+                        # est aussi valide dans ce cadre !!!
+                        #
+                        # Nous avons donc renvoyé à notre appelant ces 2 solutions...
+                        #
+                        # Or, search_files_from_a_mask() était alors appelée depuis
+                        # le point :
+                        #
+                        #   « 3ème partie : On cherche » de MediaFile.choose_file()
+                        #
+                        # ... ce qui a provoqué, dans la suite des traitements ( ie
+                        # « 4ème partie : On ajoute éventuellement des solutions » )
+                        # de choose_file(), que la solution :
+                        #
+                        #   « >>> CRÉATION d'un fichier de configuration [..] <<< »
+                        #
+                        # ... soit ajoutée. En effet, cette ligne est automatiquement
+                        # ajoutée si apparaît dans la liste des fichiers résultat au
+                        # moins un .CFG !!!
+                        #
+                        # CONCLUSION : Il a fallu rendre plus exact l'algorithme ci-
+                        # dessous afin qu'une recherche type « xxx*(..)*zzz » ne soit
+                        # plus traitée comme une recherche type « *xxx*(..)*zzz* ».
+                        #
+                        # D'où l'ajout des 2 "if" couplés aux fonctions startswith()
+                        # et endswith().
+                        #
+                        # Il aurait été probablement plus efficace d'intégrer ces "if"
+                        # à la boucle "for" qui suit : en effet, dans cette boucle,
+                        # on teste de nouveau la 1ère et la dernière sous-chaînes de
+                        # recherche ( déjà testées dans les "if" ).
+                        #
+                        # Toutefois, d'une part, ces 2 "if" facilitent la lecture de
+                        # l'algorithme et, d'autre part, ils sont bien plus rapides
+                        # à écrire !!!
+                        #
+                        # Lorsque j'aurais du temps, il sera possible d'améliorer
+                        # cet algorithme...
+                        #
+                        if mask[0] != '*' and not name.startswith(mask_lst[0]):
+                            node_ok = False
+
+                        elif mask[-1] != '*' and not name.endswith(mask_lst[-1]):
+                            node_ok = False
+
+                        else:
+                            for mask_part in mask_lst:
+
+                                if mask_part in name:
+                                    # On trouve bien la sous-chaîne considérée dans
+                                    # le nom de fichier. On retire alors du nom de
+                                    # fichier la séquence "*<cette sous-chaîne>", et
+                                    # on va continuer la boucle afin de vérifier que
+                                    # les sous-chaînes suivantes sont bien présentes
+                                    # dans ce qui reste du nom de fichier...
+                                    #
+                                    # Algorithme :
+                                    #
+                                    #   part_index_begin = name.index(mask_part)
+                                    #   part_index_end = part_index_begin + len(mask_part)
+                                    #   name = name[part_index_end:]
+                                    #
+                                    # Sa simplification :
+                                    #
+                                    name = name[
+                                        name.index(mask_part) + len(mask_part)
+                                        :
+                                        ]
+
+                                else:
+                                    # Une des sous-chaînes recherche n'est pas présente
+                                    # dans le nom du fichier. On ne retient donc pas ce
+                                    # fichier...
+                                    #
+                                    node_ok = False
+                                    break
+
+                        return node_ok
+
+                    test_fct = _test_complex
+
+
+            # On construit le dictionnaire qui va nous permettre de transmettre
+            # notre analyse à _fake_iglob().
+            #
+            return {
+                'mask'      :   mask,
+                's_type'    :   s_type,
+                'suffix'    :   suffix,
+                'mask_lst'  :   mask_lst,
+                'test_fct'  :   test_fct,
+            }
+
+
+        def _fake_iglob(
+            self,
+            n_type: int = _glob_all_nodes,
+            #
+            # Si avant l'appel à _fake_iglob(), _parse_mask() a été
+            # appelée, point n'est besoin de fournir à nouveau la
+            # valeur de « mask » puisqu'elle aura déjà été donnée à
+            # _parse_mask() !!!
+            #
+            mask: str = '*',
+            #
+            # Les paramètres suivants n'ont pas à être indiqués par
+            # l'appelant, sauf via 1 dictionnaire qui lui aurait été
+            # transmis après un appel à notre méthode _parse_mask() :
+            #
+            #   _fake_iglob( .., **_parse_mask( .. ) )
+            #
+            # Un tel appel à _parse_mask() autorise en fait à tester
+            # la bonne rédaction de « mask », ainsi qu'à initialiser
+            # à l'avance les données nécessaires au bon déroulé de la
+            # recherche.
+            #
+            # Nous aurions pu réaliser cette fonctionnalité d'1 façon
+            # différente ( via des fonctions LAMBDA par exemple, ou
+            # via le transfert en paramètre d'un dictionnaire ) mais
+            # nous avons choisi cette manière à des fins didactiques
+            # i.e pour tester les possibilités type « KWARGS » qui
+            # sont offertes par Python.
+            #
+            s_type: int = None,
+            suffix: str = None,
+            mask_lst: list = None,
+            test_fct: object = None, # function
+            ) -> list:
+            # -> list( STR )
+            """ Cherche dans un répertoire tous les noeuds dont le
+            nom correspond à un certain masque. Renvoie 1 itérateur
+            ( ou plutôt un générateur ) sur ces noeuds ( fichiers ou
+            répertoires ), dont les chemins seront exprimés en paths
+            ABSOLUS.
+
+            Cette méthode émule glob.iglob(), fnmatch.filter() ou
+            pathlib.glob().
+            Cf :
+
+                https://docs.python.org/3/library/glob.html#glob.iglob
+                https://docs.python.org/3/library/fnmatch.html#fnmatch.filter
+                https://docs.python.org/3/library/pathlib.html#pathlib.Path.glob
+
+            Pour le détail des masques acceptés, cf la définition
+            ci-dessous de notre paramètre mask ( « :param mask: » ).
+
+            En terme de puissance d'écriture du masque, _fake_iglob
+            n'offre toutefois pas toutes les possibilités présentes
+            chez les fonctions qu'elle émule.
+
+            Par exemple, actuellement, elle ne sait interpréter les
+            caractères spéciaux ( wildcards ) suivants :
+
+                ?           matches any single character
+                [seq]       matches any character in seq
+                [!seq]      matches any character not in seq
+
+            SAUF SI NOUS IMPOSONS EN AMONT L'UTILISATION DE FNMATCH
+            VIA UN APPEL DU TYPE :
+
+                 _fake_iglob( n_type, **_parse_mask( mask, _search_fnmatch ) )
+
+
+            :param n_type: voulons-nous que soient retournés :
+
+                - _glob_all_nodes = les fichiers et répertoires
+                correspondant au masque fourni.
+
+                - _glob_only_dirs = seulement les répertoires.
+
+                - _glob_only_files = seulement les fichiers.
+
+
+            :param mask: le masque de recherche & sont acceptés :
+
+                - « * » : tous les fichiers.
+
+                - « *.xxx » : les fichiers d'un certain type.
+
+                - « title*.m* » : masque plus complexe.
+
+                Si avant l'appel à _fake_iglob(), _parse_mask a été
+                invoquée, point n'est besoin de donner à nouveau la
+                valeur de « mask » puisqu'elle aura déjà été fournie
+                à _parse_mask() !!!
+
+
+            :param s_type:
+            :param suffix:
+            :param mask_lst:
+            :param test_fct:
+                Les paramètres ci-dessus n'ont pas à être indiqués
+                par notre appelant, sauf via 1 dictionnaire qui lui
+                aurait été transmis après un appel à _parse_mask().
+                Cf commentaire ci-dessus inclus dans la définition
+                de notre grammaire d'appel ( def _fake_iglob ... ).
+
+
+            :return: la liste des fichiers trouvés, dont toutes les
+            valeurs seront de type STRING, et représenteront un path
+            ABSOLU.
+            """
+
+            leaf = self.tree.node
+
+            log_debug = self.tree.write_in_log
+            log_debug('Recherche de fichiers via « _fake_iglob »')
+            log_debug('... avec des résultats sous forme de PATHS ABSOLUS')
+            log_debug(f'... avec itération via « {self.walking_mode} ».')
+
+
+            # On indique si tous les noeuds seront recherchés, seulement les
+            # fichiers, ou seulement les répertoires.
+            #
+            if n_type == _glob_all_nodes:
+                log_debug("Fichiers ET répertoires acceptés.")
+
+            elif n_type == _glob_only_dirs:
+                log_debug("RÉPERTOIRES seuls acceptés.")
+
+            else:
+                log_debug("FICHIERS seuls acceptés.")
+
+
+            # Si les paramètres de notre recherche n'ont pas été initialisés,
+            # nous nous en chargeons...
+            #
+            if s_type is None or test_fct is None:
+
+                log_debug("Nous devons en premier lieu analyser le masque.")
+
+                mask_dct = self._parse_mask(mask)
+                s_type = mask_dct['s_type']
+                suffix = mask_dct['suffix']
+                mask_lst = mask_dct['mask_lst']
+                test_fct = mask_dct['test_fct']
+
+            else:
+                log_debug("Le masque a déjà été analysé.")
+
+
+            # On lance notre recherche grâce à l'initialisation qui résulte
+            # de l'appel en amont à _parse_mask().
+            #
+            if s_type in _searches_lst:
+
+                log_debug(f"Fonction de « match » : {test_fct}")
+
+                s_len = len(suffix) if suffix is not None else 0
+                s_lower = suffix.lower() if suffix is not None else None
+
+                for file_or_dir in self.iterdir():
+
+                    # Le noeud du système de fichier dont nous allons inspecter
+                    # le nom est-il bien du type recherché ?
+                    #
+                    # C-a-d cherchons-nous tous les noeuds ? les fichiers ou les
+                    # répertoires seulement ?
+                    #
+                    node_ok = (n_type == _glob_all_nodes) \
+                        or (n_type == _glob_only_dirs and file_or_dir.is_dir()) \
+                        or (n_type == _glob_only_files and file_or_dir.is_file())
+
+                    # On teste si le nom du fichier ou du répertoire correspond au
+                    # masque indiqué.
+                    #
+                    # Nous fournissons à la fonction de test toutes les infos dont
+                    # elle pourrait avoir besoin. Certaines de celles-ci auraient
+                    # pu être recalculées lors de chaque appel, au prix d'1 perte
+                    # de temps. Nous avons choisi de perdre de la mémoire plutôt.
+                    #
+                    # Nous aurions pu transmettre à la fonction « test_fct » ces
+                    # paramètres d'une façon différente ( via une fonction LAMBDA
+                    # définie ds _parse_mask avec les bons arguments par exemple,
+                    # ou via le transfert en paramètre d'1 dictionnaire ) mais ns
+                    # avons opté pour cette méthode à des fins didactiques ie pour
+                    # tester les possibilités type « KWARGS » offertes par Python.
+                    #
+                    # Par contre, nous n'aurions pu utiliser des variables d'un
+                    # type « NON LOCAL » à l'intérieur de _parse_mask() et de sa
+                    # fonction imbriquée choisie pour les tests. En effet, nous
+                    # aurions alors pu nous confronter à des effets de bord non
+                    # désirés dans le cas d'exécution en // ou asynchrone !!!
+                    #
+                    if node_ok and test_fct(
+                                        file_or_dir.name,
+                                        mask = mask,
+                                        mask_lst = mask_lst,
+                                        suffix_len = s_len,
+                                        suffix_lower = s_lower,
+                                        ):
+
+                        log_debug(f'Nouveau fichier trouvé : « {file_or_dir} ».')
+                        log_debug(f'\t\t=> DATATYPE = {type(file_or_dir)}')
+
+                        # Notre méthode .iterdir() ne fournit un PATH ABSOLU
+                        # que dans le cas où elle renvoie des FileSystemLeaf.
+                        # Dans ce cas, nous pourrions donc n'écrire que :
+                        #
+                        #   yield str(file_or_dir)
+                        #                        
+                        # Mais si notre squelette est configuré pour travailler
+                        # avec le module PATHLIB, alors les objets file_or_dir
+                        # sont de type pathlib.PATH : aucune garantie qu'ils ne
+                        # soient en ce cas avec un path absolu, d'où l'appel à
+                        # la méthode .resolve() pour cela...
+                        #
+                        # Pour plus d'explications, cf la partie « :return: »
+                        # dans l'entête de notre méthode .iterdir() :
+                        #
+                        #   « def iterdir(self) -> object: »
+                        #
+                        yield str(file_or_dir.resolve())
+                        #
+                        # Cf aussi la mise en garde ds notre méthode .resolve :
+                        #
+                        #   « ATTENTION = Lorsqu'un path n'est pas absolu »
+
+
+            # Si le type de recherche ne nous est pas connu, nous devrions
+            # lancer une exception. Nous avons ici choisi de ne renvoyer
+            # aucun résultat.
+            #
+            else:
+                log_debug(f"Type de recherche inconnu : {s_type}.")
+                log_debug("AUCUN RÉSULTAT NE SERA DONC FOURNI !!!")
+
+                yield from ()
+
+
+        def glob(self, mask: str = '*') -> os.PathLike:
+            # -> ( itérateur / générateur ) STR [ ou ] PATHLIB.PATH
+            """ Glob the given relative pattern in the directory
+            represented by this path, yielding all matching files
+            (of any kind).
+
+            Cf https://docs.python.org/3/library/glob.html#glob.glob
+            Cf https://docs.python.org/3/library/glob.html#glob.iglob
+            Cf https://docs.python.org/3/library/fnmatch.html#fnmatch.filter
+            Cf https://docs.python.org/3/library/pathlib.html#pathlib.Path.glob
+
+            ATTENTION : Cette méthode retourne...
+
+                . soit une liste de path sous forme de STRING
+                ( cas « pathlib_ignore », « with_glob », « with_fnmatch » )
+
+                . soit une liste de path sous forme de pathlib.PATH
+                ( cas « pathlib_direct » ou « pathlib_deeply » )
+
+                En effet, pathlib.glob() retourne une liste de valeurs
+                de type pathlib.PATH et non de type STRING !!!
+
+            ... donc il faut tenir compte de cela lorsque l'on traite
+            la liste des résultats, sous peine de PLANTAGE !!!
+
+            Par exemple, si l'on concatène chacun des résultats avec
+            une chaîne de caractères ( STRING ) pour écrire 1 message,
+            dans le 2nd cas cela lèvera une exception car l'opération
+            « STRING » + « pathlib.PATH » n'est pas définie.
+
+            Qq chose comme :
+
+                for name in < FileSystemTree.FileSystemLeaf >.glob('*.py'):
+                    print('\t' + name)
+
+            ... pourrait ainsi planter notre script dans le 2nd cas.
+
+            :param mask: le masque de recherche, qui peut contenir
+            des « wildcards ». Ces wildcards sont soit ceux compris
+            par pathlib.glob(), glob.glob() ou fnmatch.filter(), soit
+            ceux compris par notre méthode _fake_iglob(). Cela dépend
+            si nous avons ou pas importé les modules PATHLIB ou GLOB,
+            voire FNMATCH.
+
+            :return: un itérateur sur la liste des répertoires ou des
+            fichiers trouvés, et cette suite de valeurs sera de type
+            STRING ou PATHLIB.PATH. Nous essayerons par ailleurs au
+            maximum que ces valeurs soient des paths ABSOLUS.
+
+                Lorsqu'il s'agit de STRINGS, nous nous assurons que
+                la valeur retournée soit un PATH ABSOLU.
+
+                Si les données retournées sont de type PATHLIB.PATH,
+                la valeur retournée sera un PATH ABSOLU ( ie en mode
+                « pathlib_deeply ) de type PATHLIB.PATH.
+
+                Par contre, en mode « pathlib_direct », mode que nous
+                ne savons pas contrôler puisqu'il est direct et shunte
+                cette fonction, alors les paths seront absolus si le
+                module pathlib l'entend de cette oreille, ils seront
+                relatifs sinon...
+
+            RQ : Le comportement intrinsèque du module PATHLIB est le
+            suivant = pathlib.Path(x).glob(..) donne 1 suite de paths
+            ABSOLUS si son paramètre « x » est absolu. Les résultats
+            seront des paths RELATIFS sinon.
+
+            Il suffit de comparer sous IDLE les résultats de :
+
+                for i in pathlib.Path('K:\\_Backup.CDs').glob('*.rar'): print(i)
+                for i in pathlib.Path('..').glob('*.zip'): print(i)
+                for i in pathlib.Path().glob('*.py'): print(i)
+
+            ... pour s'en convaincre.
+            """
+
+            log_debug = self.tree.write_in_log
+
+            if not self.is_dir():
+
+                log_debug("Configuration d'une recherche - Répertoire non valide :")
+                log_debug(f"« {self} »")
+
+                # Dans ce script, nous aurions toutefois pu opter
+                # pour renvoyer une liste vide :
+                #
+                #   return list()
+                #
+                # ... ou plutôt un itérateur vide :
+                #
+                #   iter(())
+                #
+                # mais l'utilisation de ce _generator_empty() a
+                # été choisi pour des raisons didactiques...
+                #
+                generator = _generator_empty()
+
+
+            elif self.tree.with_glob:
+
+                # Nous avons l'autorisation de nous servir de la
+                # librairie GLOB de Python.
+                #
+                log_debug("Configuration d'une recherche - via « glob.iglob »")
+                log_debug('... avec des résultats sous forme de PATHS ABSOLUS')
+
+                # glob.iglob() fourni un itérateur, nous pourrions
+                # donc écrire :
+                #
+                #   generator = glob.iglob(..)
+                #
+                # Toutefois, nous sommes obligés de l'encapsuler,
+                # car nous voulons transformer la suite de paths
+                # RELATIFS fournie par glob.iglob() en des PATHS
+                # ABSOLUS !!!
+                #
+                # Nous encapsulons donc l'itérateur fourni par
+                # glob.iglob() dans notre propre générateur.
+                #
+                dir = self.location_string
+                iterator = glob.iglob(mask, root_dir = dir)
+                fct = lambda x: os.path.abspath(os.path.join(dir, x))
+
+                generator = _generator_create(iterator, fct)
+
+
+            elif self.tree.with_fnmatch:
+
+                # Nous avons l'autorisation de nous servir de la
+                # librairie FNMATCH de Python.
+                #
+                log_debug("Configuration d'une recherche - via « fnmatch.filter »")
+                log_debug('... avec des résultats sous forme de PATHS ABSOLUS')
+                log_debug(f'... avec itération via « {self.walking_mode} »')
+
+                # fnmatch.filter() construit & renvoie une liste.
+                #
+                #
+                # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                # !!! EXEMPLE D'UTILISATION DE LA FONCTION MAP() !!!
+                # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                #
+                #
+                # En 1er paramètre, fnmatch.filter attend une liste
+                # d'objets os.Pathlike. Or notre méthode iterdir()
+                # fournit 1 liste d'objets soit typés pathlib.Path
+                # ( classe incluse dans os.Pathlike ), soit typés
+                # FileSystemLeaf ( classe inconnue de os.Pathlike )
+                # donc nous utilisons la fonction MAPS() afin que
+                # soit appliquée la méthode STR() à chacun de ces
+                # objets, et ainsi que fnmatch.filter() puisse les
+                # comprendre, même s'ils sont typés FileSystemLeaf,
+                # car le type STRING est inclus dans os.Pathlike.
+                #
+                # D'où la 1ère solution adoptée :
+                #
+                #   iterable = fnmatch.filter(map(str, self.iterdir()), mask)
+                #
+                #
+                # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                # !!! EXEMPLE D'UTILISATION D'UNE COMPRÉHENSION DE LISTE !!!
+                # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                #
+                #
+                # Pour autant, par la suite, notre fonction iterdir()
+                # a renvoyé des PATHS ABSOLUS, ce qui a eu pour effet
+                # que la fonction fnmatch.filter() reconnaisse moins
+                # bien les fichiers / répertoires cherchés. Ainsi, si
+                # l'on recherche un masque « Sk*lE*.py » et que :
+                #
+                #   map(str, self.iterdir())
+                #
+                # ... nous fournit comme liste :
+                #
+                #   K:\_Know\Info\Dvpt\Réalisation\Src\_Python\[ skeleton ]\__pycache__
+                #   K:\_Know\Info\Dvpt\Réalisation\Src\_Python\[ skeleton ]\#_LOG_for_skeleton { SRC }_#_nzhx35c8.log
+                #   K:\_Know\Info\Dvpt\Réalisation\Src\_Python\[ skeleton ]\( outils ) DEPLOY - skeleton.bat
+                #   K:\_Know\Info\Dvpt\Réalisation\Src\_Python\[ skeleton ]\( outils ) RUN from anywhere - skeleton - via Python 3.11.bat
+                #   K:\_Know\Info\Dvpt\Réalisation\Src\_Python\[ skeleton ]\( tool ) EDIT script ( in current directory ) using IDLE and Python 3.11.lnk
+                #   K:\_Know\Info\Dvpt\Réalisation\Src\_Python\[ skeleton ]\--- [ skeleton ] = 2Do & NOTES.rar
+                #   K:\_Know\Info\Dvpt\Réalisation\Src\_Python\[ skeleton ]\skeleton { SRC }.py
+                #   K:\_Know\Info\Dvpt\Réalisation\Src\_Python\[ skeleton ]\skeleton.py
+                #
+                # ... alors fnmatch.filter ne trouvera aucun résultat
+                # puisque perturbé par le chemin en début de chacune
+                # des STRINGS.
+                #
+                # Nous avions donc besoin de fournir à fnmatch.filter()
+                # la liste des noms de fichiers SANS leur chemin c-a-d
+                # la 2ème solution :
+                #
+                #   iterable = [str(n) for n in self.iterdir() if fnmatch.fnmatch(n.name, mask)]
+                #
+                # Cette dernière solution permet de renvoyer str(n)
+                # donc les PATHS ABSOLUS puisque self.iterdir() le
+                # fait autant que faire se peut.
+                #
+                # Pour autant, dans la documentation de fnmatch.filter(),
+                # on lit :
+                #
+                #   fnmatch.filter(names, pattern)¶
+                #   Construct a list from those elements of the iterable names that match pattern.
+                #   It is the same as [n for n in names if fnmatch(n, pattern)], but implemented
+                #   more efficiently.
+                #
+                # ... MORE EFFICIENTLY, donc nous avons choisi d'adopter
+                # une 3ème solution, utilisant fnmatch.filter() au lieu de
+                # fnmatch.fnmatch(), d'où la 3ème solution :
+                #
+                iterable = fnmatch.filter([n.name for n in self.iterdir()], mask)
+                #
+                # Cette solution crée une liste de noms de fichiers ou de
+                # répertoires seuls ( sans leur chemin ) mais cela sera
+                # corrigé par la fonction lambda « fct » ci-dessous...
+                #
+                fct = lambda x: os.path.abspath(
+                        os.path.join(
+                            self.location_string,
+                            x
+                            )
+                        )
+
+                generator = _generator_create(iterable, fct)
+
+
+            elif self.tree.pathlib_import:
+
+                # Lorsque nous nous trouvons ici, alors notre mode
+                # d'exécution est « pathlib_deeply ».
+                #
+                # Ainsi, nous utilisons le module PATHLIB, mais pas
+                # directement. Un objet FileSystemLeaf est créé afin
+                # d'accéder et / ou manipuler un noeud du système de
+                # fichiers, via les méthodes du module PATHLIB.
+                #
+                log_debug("Configuration d'une recherche - via « pathlib.glob »")
+                log_debug('... avec des résultats sous forme de PATHS ABSOLUS')
+
+                # pathlib.Path.glob() construit & renvoie 1 générateur.
+                #
+                # Cf (..)\Python310\lib\pathlib.py
+                #
+                # Les tests suivants sous IDDLE le confirment :
+                #
+                #   import pathlib
+                #   lst = pathlib.Path('.').glob('*')
+                #   type(lst)
+                #
+                # -> result = <class 'generator'>
+                #
+                #   print(lst)
+                #
+                # -> result = <generator object Path.glob at 0x00000182FFB63A00>
+                #
+                # Par ailleurs, pathlib.Path(x).glob() donne des paths
+                # ABSOLUS si son paramètre « x » est absolu, sinon les
+                # paths seront RELATIFS.
+                #
+                # Il suffit de comparer sous IDLE les résultats de :
+                #
+                #   for i in pathlib.Path('K:\\_Backup.CDs').glob('*.rar'): print(i)
+                #   for i in pathlib.Path('..').glob('*.zip'): print(i)
+                #   for i in pathlib.Path().glob('*.py'): print(i)
+                #
+                # ... pour s'en convaincre.
+                #
+                # Pour forcer la réponse sous forme de path ABSOLU, nous
+                # utilisons les méthodes de pathlib transformant un path
+                # relatif en path absolu.
+                #
+                # Toutefois, nous n'avons pas choisi Path.absolute() :
+                #
+                #   generator = pathlib.Path(x).absolute().glob()
+                #
+                # En effet, cette méthode fournit parfois des réponses du
+                # type :
+                #
+                #   K:\_Know\Info\Dvpt\Réalisation\Src\_Python\[ skeleton ]\..\all files to one PDF\skeleton.py
+                #
+                # Avec la méthode resolve(), par contre :
+                #
+                #   « “..” components are also eliminated (this is the only method to do so) »
+                #
+                #   Cf https://docs.python.org/3/library/pathlib.html#pathlib.Path.resolve
+                #
+                # C'est donc elle que nous utilisons.
+                #
+                generator = self.location_object.resolve().glob(mask)
+
+
+            else:
+                # Nous sommes ici dans le mode « pathlib_ignore » et
+                # nous n'utilisons que les fonctions de OS.PATH pour
+                # émuler les méthodes de PATHLIB.
+                #
+                log_debug("Configuration d'une recherche - via « _fake_iglob »")
+
+                # Nous ne pouvons nous servir du paramètre « n_type »
+                # de _fake_iglob() car notre méthode glob ne propose
+                # pas ce type de paramètre ( et ce car ni glob.glob,
+                # ni pathlib.glob ne proposent une telle info... ).
+                #
+                # Nous demandons donc la recherche de tous les types
+                # de noeuds ( fichiers et répertoires ).
+                #
+                generator = self._fake_iglob(**self._parse_mask(mask))
+
+
+            # La PRÉSENCE de YIELD dans le reste de cette fonction
+            # impliquerait que le CODE de cette FONCTION ne SERAIT
+            # EXÉCUTÉ que LORSQUE le GÉNÉRATEUR serait PARCOURU d'1
+            # façon ( via un FOR ) ou d'1 autre ( via 1 liste... ).
+            #
+            # Il faut donc que cette fonction créé 1 générateur là
+            # où dans les fichiers précédents elle créait 1 liste
+            # et « yieldait » ( itérait ) sur cette liste.
+            #
+            # Il faut donc faire DISPARAÎTRE toute instruction YIELD
+            # du corps de cette fonction en les déménageant ailleurs
+            # ( dans 1 sous-fonction, dans 1 fonction globale, ... ) !!!
+            #
+            # Cf - GÉNÉRATEURS - Comment FONCTIONNE l'instruction YIELD *.py
+            # in - et - ITÉRATEUR ou GÉNÉRATEUR.rar
+            # in _Know\Info\Dvpt\Réalisation\Langages\Python
+            #
+            # Ici nous retournons donc bien le générateur créé ou
+            # l'itérateur qui existe déjà. C'est ainsi dans notre
+            # code que nous ne devons pas utiliser de YIELD mais
+            # plutôt renvoyer 1 itérateur / générateur !!!
+            #
+            return generator
+
+
+        def unlink(self):
+            """ Pour DÉTRUIRE un fichier.
+            """
+
+            if self.tree.pathlib_import:
+                # Lorsque nous nous trouvons ici, alors notre mode
+                # d'exécution est « pathlib_deeply ».
+                #
+                # Ainsi, nous utilisons le module PATHLIB, mais pas
+                # directement. Un objet FileSystemLeaf est créé afin
+                # d'accéder et / ou manipuler un noeud du système de
+                # fichiers, via les méthodes du module PATHLIB.
+                #
+                self.location_object.unlink(missing_ok = False)
+
+            else:
+                # Nous sommes ici dans le mode « pathlib_ignore » et
+                # nous n'utilisons que les fonctions de OS.PATH pour
+                # émuler les méthodes de PATHLIB.
+                #
+                os.remove(self.location_string)
+
+
+# ---------------------------------------------------------------------------
+#
+#   PARTIE :
+#   ~~~~~~~~
+#   Définition de la classe ScriptSkeleton ( __init__() et __del__() ).
+#
+# ---------------------------------------------------------------------------
 
 
 # Notre classe principale ScriptSkeleton.
@@ -253,10 +2543,14 @@ class ScriptSkeleton:
         module_name: str = None,
         module_file: str = __file__,
         arguments: list = None,
-        debug_mode: bool = ___debug___
+        debug_mode: bool = ___debug___,
+        walking_mode: str = walking_via_listdir,
+        with_pathlib: str = pathlib_ignore,
+        with_fnmatch: bool = False,
+        with_glob: bool = False
         ):
         """
-        :param module_name:
+        :param module_name: nom du module.
 
         :param module_file: nom du fichier appelant ( sa valeur
         de __file__ en général ).
@@ -271,6 +2565,41 @@ class ScriptSkeleton:
         Un autre nom pour ce paramètre pourrait être :
 
                 VERBOSE = True / False...
+
+        :param walking_mode: si ce « squelette » n'utilise que le
+        module OS.PATH, pour parcourir 1 répertoire utilisera-t-il
+        la fct os.listdir() ou os.scandir() ?
+
+            * walking_via_listdir : os.listdir() utilisée.
+
+            * walking_via_scandir : os.scandir() utilisée.
+
+            * walking_ignore : peu importe ( cas où module PATHLIB
+            est utilisé pour gérer les fichiers... ) et, si nous
+            arrivons tout de même dans 1 partie de code utilisant
+            cette informat°, la méthode par défaut ( ie os.listdir()
+            sera utilisée ).
+
+            RQ = Si les modules GLOB ou FNMATCH sont importés, cela
+            n'impose pas le walking_mode et il faut le spécifier !
+
+            RQ = Cf FileSystemTree.FileSystemLeaf.iterdir()
+
+        :param with_pathlib: ce « squelette » va-t-il s'appuyer sur
+        le module PATHLIB, ou simplement se servir de la librairie
+        OS.PATH ? Valeurs possibles :
+
+            * pathlib_ignore ( None ) : pas de module PATHLIB.
+
+            * pathlib_direct : module PATHLIB sans filtre.
+
+            * pathlib_deeply : module PATHLIB incorporé.
+
+        :param with_fnmatch: ce « squelette » va-t-il s'appuyer sur
+        le module FNMATCH ?
+
+        :param with_glob: ce « squelette » va-t-il s'appuyer sur le
+        module GLOB ?
         """
 
         # On personnalise notre mode de déboggage.
@@ -300,6 +2629,16 @@ class ScriptSkeleton:
         self._logHandler = None
         self._logFile = None
 
+        # On créé l'objet qui va nous permettre d'accéder à la gestion des répertoires
+        # et des fichiers.
+        #
+        self.files = FileSystemTree(
+            walking_mode = walking_mode,
+            with_pathlib = with_pathlib,
+            with_fnmatch = with_fnmatch,
+            with_glob = with_glob
+            )
+
         # Nous sommes obligés d'initialiser logItem à None, et ce afin que Python sache
         # que ScriptSkeleton possède un attribut de ce nom.
         #
@@ -309,14 +2648,14 @@ class ScriptSkeleton:
         #
         if module_name is None:
 
-            module_name = os.path.basename(
-                os.path.splitext(
-                    module_file
-                    )[0]
-                )
+            # On donne comme nom de module, le nom de base ( sans extension ) de notre
+            # nom de fichier ( module_file ).
+            #
+            module_name = self.files.node(module_file).stem
 
         self.logItem = None
         self.logItem = self.on_ouvre_le_journal(module_name)
+        self.files.register_log(self.logItem)
 
         # ATTENTION : Lorsque nous serons dans notre méthode __del__() et donc dans le
         # ramasse-miettes de Python = POTENTIELLEMENT, les objets LOG seront aussi en
@@ -365,7 +2704,6 @@ class ScriptSkeleton:
         #       - working_MACHINE_TYPE,
         #       - working_PATH_FULL,
         #       - working_PATH_DSK_ONLY,
-        #       - working_PATH_DIRS_ONLY,
         #       - EXE_txt_editor,
         #       - EXE_(..),
         #       - DIR_(..),
@@ -488,6 +2826,7 @@ class ScriptSkeleton:
         """
 
         no_error = True
+        leaf = self.files.node
 
         for key, value in self.paths_and_miscellaneous.items():
 
@@ -501,15 +2840,16 @@ class ScriptSkeleton:
                 if key_short in ('DIR_', 'EXE_', 'DLL_'):
 
                     printer(f"Test de l'existence de {key}...")
+                    node = leaf(value)
 
-                if key_short == 'DIR_' and not os.path.isdir(value):
-                    name = 'répertoire'
+                    if key_short == 'DIR_' and not node.is_dir():
+                        name = 'répertoire'
 
-                elif key_short == 'EXE_' and not os.path.isfile(value):
-                    name = 'fichier'
+                    elif key_short == 'EXE_' and not node.is_file():
+                        name = 'fichier'
 
-                elif key_short == 'DLL_' and not os.path.isfile(value):
-                    name = 'module DLL'
+                    elif key_short == 'DLL_' and not node.is_file():
+                        name = 'module DLL'
 
                 if name is not None:
 
@@ -530,7 +2870,7 @@ class ScriptSkeleton:
 
     def set_paths_and_miscellaneous(
         self,
-        directory: str = '',
+        directory: str = None,
         print_configuration: bool = None
         ) -> str:
         """ Définitions des différents exécutables dont se sert ce script.
@@ -546,6 +2886,7 @@ class ScriptSkeleton:
         """
 
         log = self.logItem
+        leaf = self.files.node
 
         # ATTENTION : PERSONNALISATION de notre mode DEBUG
         # -----------
@@ -584,6 +2925,13 @@ class ScriptSkeleton:
         #
         if print_configuration is None:
             print_configuration = self._debug_
+
+        # Les modules optionnels sont-ils chargés ?
+        #
+        self.paths_and_miscellaneous['walking_MODE'] = str(self.files.walking_mode)
+        self.paths_and_miscellaneous['module_PATHLIB'] = str(pathlib)
+        self.paths_and_miscellaneous['module_FNMATCH'] = str(fnmatch)
+        self.paths_and_miscellaneous['module_GLOB'] = str(glob)
 
         # Où sommes-nous ?
         #
@@ -638,8 +2986,8 @@ class ScriptSkeleton:
 
         # On initialise le répertoire de travail de ce programme.
         #
-        if directory == '' or not os.path.isdir(directory):
-            working_path = os.getcwd()
+        if directory is None or not leaf(directory).is_dir():
+            working_path = str(self.files.cwd())
         else:
             working_path = directory
 
@@ -650,11 +2998,19 @@ class ScriptSkeleton:
         #   directories_and_files['working_PATH_DSK_ONLY'] = working_path[0:2]
         #   directories_and_files['working_PATH_DIRS_ONLY'] = working_path[3:]
         #
-        # Maintenant, on est passé à os.path.splitdrive, afin d'être plus PORTABLE...
+        # Ensuite, on est passé à os.path.splitdrive, pour être plus PORTABLE :
         #
-        (path_drive, path_tail) = os.path.splitdrive(working_path)
-        self.paths_and_miscellaneous['working_PATH_DSK_ONLY'] = path_drive
-        self.paths_and_miscellaneous['working_PATH_DIRS_ONLY'] = path_tail
+        #   (path_drive, path_tail) = os.path.splitdrive(working_path)
+        #   self.paths_and_miscellaneous['working_PATH_DSK_ONLY'] = path_drive
+        #   self.paths_and_miscellaneous['working_PATH_DIRS_ONLY'] = path_tail
+        #
+        # Puis l'on est passé à l'utilisation de notre classe FileSystemTree,
+        # et l'on a alors supprimé l'affectation relative au « path_tail » car
+        # « working_PATH_DIRS_ONLY » n'était utilisé nulle part et car cette
+        # donnée / attribut n'est pas présente dans le module PATHLIB !!!
+        #
+        working_drive = leaf(working_path).drive
+        self.paths_and_miscellaneous['working_PATH_DSK_ONLY'] = working_drive
 
         # On initialise les comportements généraux de ce programme.
         #
@@ -677,8 +3033,9 @@ class ScriptSkeleton:
             # On considère que LibreOffice est tjrs au même endroit...
             #
             libre_office_dir = r"C:\Program Files\LibreOffice\program"
-            libre_office_exec = os.path.join(libre_office_dir, "soffice.exe")
-            libre_writer_exec = os.path.join(libre_office_dir, "swriter.exe")
+            libre_office_node = leaf(libre_office_dir)
+            libre_office_exec = str(libre_office_node / "soffice.exe")
+            libre_writer_exec = str(libre_office_node / "swriter.exe")
 
             # Edit Pad Pro peut-être "rangé" / installé dans plusieurs
             # répertoires différents suivant les machines, suivant que
@@ -728,25 +3085,33 @@ class ScriptSkeleton:
             log.debug("Recherche d'EditPad Pro :")
         
             for dir_to_try in editpad_dir_list:
+
                 log.debug('Répertoire testé = %s', dir_to_try)
-                if os.path.isdir(dir_to_try):
+
+                if leaf(dir_to_try).is_dir():
                     dir_txt_editor = dir_to_try
                     log.debug('Répertoire retenu = %s', dir_txt_editor)
                     break
     
             if dir_txt_editor is not None:
+                dir_txt_node = leaf(dir_txt_editor)
+
                 for exe_to_try in editpad_exe_list:
+
                     log.debug('Fichier testé = %s', exe_to_try)
-                    file_to_test = os.path.join(dir_txt_editor, exe_to_try)
-                    if os.path.isfile(file_to_test):
-                        exe_txt_editor = file_to_test
+                    file_to_test = dir_txt_node / exe_to_try
+
+                    if file_to_test.is_file():
+                        exe_txt_editor = str(file_to_test)
                         log.debug('Fichier retenu = %s', exe_txt_editor)
                         break
+
+            root_node = leaf(root)
 
             if exe_txt_editor is None:
                 # Si l'on n'a pas trouvé EditPadPro, on se rabat sur Notepad.
                 #
-                exe_txt_editor = os.path.join(root, 'notepad.exe')
+                exe_txt_editor = str(root_node / 'notepad.exe')
                 log.debug('Fichier retenu = %s', exe_txt_editor)
 
             log.debug('')
@@ -774,9 +3139,9 @@ class ScriptSkeleton:
                 # de cette méthode est que le son est réglable et que
                 # cela marche sur un PC de bureau comme sur un portable...
                 #
-                player_exe = os.path.join(root, 'System32', 'mplay32.exe')
+                player_exe = str(root_node / 'System32' / 'mplay32.exe')
                 player_arg = ['/play', '/close']
-                played = os.path.join(root, 'Media', 'Windows XP Battery Low.wav')
+                played = str(root_node / 'Media' / 'Windows XP Battery Low.wav')
 
             else:
                 player_exe = None
@@ -949,7 +3314,7 @@ class ScriptSkeleton:
     def on_ouvre_le_journal(
         self,
         log_name,
-        directory: str = '',
+        directory: str = None,
         also_on_screen: bool = None,
         warning_on_reopen: bool = None
         ) -> logging.Logger:
@@ -1017,9 +3382,9 @@ class ScriptSkeleton:
             # Création d'un fichier temporaire qui va nous servir d
             # journal d'exécution.
             #
-            if directory == '' or not os.path.isdir(directory):
-        
-                directory = os.getcwd()
+            if directory is None or not self.files.node(directory).is_dir():
+
+                directory = str(self.files.cwd())
 
             file_prefix = f'#_LOG_for_{log_name}_#_'
             file_object = tempfile.NamedTemporaryFile(
@@ -1120,8 +3485,7 @@ class ScriptSkeleton:
         # On affiche le nom du module en lettres capitales, i.e le nom du fichier, mais sans
         # son extension.
         #
-        (short_name, _) = os.path.splitext(module_file)
-        short_name = os.path.basename(short_name)
+        short_name = self.files.node(module_file).stem
 
         log.debug('')
         log.debug('Je me présente :')
@@ -1322,6 +3686,7 @@ class ScriptSkeleton:
             # Python IDLE ou pas.
             #
             idle_windows = 'pythonw.exe'
+            myLogFile = self.files.node(self._logFile)
 
             if idle_windows in sys.executable:
 
@@ -1345,13 +3710,12 @@ class ScriptSkeleton:
                 #   self.shw_debug('PS: Je ne détruis pas le LOG')
                 #   self.shw_debug('')
                 #
-                if log_to_remove and os.path.isfile(
-                    self._logFile
-                    ):
+                if log_to_remove and myLogFile.is_file():
 
                     self.shw_debug('Destruction du LOG même sous IDLE.')
                     self.shw_debug('')
-                    os.remove(self._logFile)
+
+                    myLogFile.unlink()
 
                 # Nous sommes sous IDLE donc nous affichons
                 # seulement un message avant de rendre la
@@ -1376,9 +3740,7 @@ class ScriptSkeleton:
                 # tant que l'utilisateur n'a pas frappé la
                 # touche entrée.
                 #
-                if log_to_remove and os.path.isfile(
-                    self._logFile
-                    ):
+                if log_to_remove and myLogFile.is_file():
 
                     self.shw_debug('Destruction du LOG.')
                     self.shw_debug('')
@@ -1396,9 +3758,9 @@ class ScriptSkeleton:
                 # consulter le fichier LOG. On peut donc
                 # le détruire.
                 #
-                if log_to_remove and os.path.isfile(self._logFile):
+                if log_to_remove and myLogFile.is_file():
 
-                    os.remove(self._logFile)
+                    myLogFile.unlink()
 
                 self.shw_debug('FIN DU SCRIPT')
                 self.shw_debug('')
@@ -1562,7 +3924,7 @@ class ScriptSkeleton:
                 #
                 #   cmd_line = cmd_line + args
                 #
-                # ... provequera une exception !!!
+                # ... provoquera une exception !!!
                 #
                 #   >>> args=('-f', 456,'param', 56)
                 #   >>> cmd = ['player']
@@ -2064,8 +4426,8 @@ class ScriptSkeleton:
     
         :param choices: la liste dans laquelle une valeur doit être choisie.
     
-        :param default_choice: index du choix par défaut. Cette valeur doit être fixée à -1
-        si aucun choix par défaut n'est défini.
+        :param default_choice: index du choix par défaut. Cette valeur doit être fixée
+        à -1 si aucun choix par défaut n'est défini.
     
         :return: l'index dans la liste correspondant au choix ou, sinon, -1 si aucun
         choix possible ( liste vide par exemple ).
@@ -2362,30 +4724,133 @@ class ScriptSkeleton:
 # ---------------------------------------------------------------------------
 
 
-    def search_files_from_a_mask(
+    def file_system_mode(
         self,
-        directory: str = None,
-        mask: str = '*'
-        ) -> list:
-        """ Cherche dans un répertoire tous les fichiers qui
-        correspondent à un certain masque.
+        walking_mode: str = walking_via_listdir,
+        with_pathlib: str = pathlib_ignore,
+        with_fnmatch: bool = False,
+        with_glob: bool = False
+        ):
+        """
+        Cette méthode permet de modifier le fonctionnement interne
+        de ScriptSkeleton i-e notre gestion de fichiers va-t-elle
+        s'appuyer sur la librairie OS.PATH seule, ou plutôt sur les
+        modules PATHLIB, FNMATCH et GLOB ?
 
-        :param directory: le répertoire à explorer.
+        :param walking_mode: si ce « squelette » n'utilise que le
+        module OS.PATH, pour parcourir 1 répertoire utilisera-t-il
+        la fct os.listdir() ou os.scandir() ?
 
-        :param mask: le masque de recherche.
+            * walking_via_listdir : os.listdir() utilisée.
 
-            Masques de recherche acceptés :
+            * walking_via_scandir : os.scandir() utilisée.
 
-                - "*" : tous les fichiers.
+            * walking_ignore : peu importe ( cas où un autre module
+            que OS.PATH est utilisé pour gérer les fichiers... ) et
+            si nous arrivons tout de même dans une partie de code
+            utilisant cette information, la méthode par défaut ( ie
+            os.listdir() sera utilisée ).
 
-                - "*.xxx" : les fichiers d'un certain type.
+            RQ = Si les modules GLOB ou FNMATCH sont importés, cela
+            n'impose pas le walking_mode et il faut le spécifier !
 
-                - "title*.m*" : masque plus complexe.
+            RQ = Cf FileSystemTree.FileSystemLeaf.iterdir()
 
-        :return: la liste des fichiers trouvés.
+        :param with_pathlib: ce « squelette » va-t-il s'appuyer sur
+        le module PATHLIB, ou simplement se servir de la librairie
+        OS.PATH ? Valeurs possibles :
+
+            * pathlib_ignore ( None ) : pas de module PATHLIB.
+
+            * pathlib_direct : module PATHLIB sans filtre.
+
+            * pathlib_deeply : module PATHLIB incorporé.
+
+        :param with_fnmatch: ce « squelette » va-t-il s'appuyer sur
+        le module FNMATCH ?
+
+        :param with_glob: ce « squelette » va-t-il s'appuyer sur le
+        module GLOB ?
         """
 
         log = self.logItem
+        tree = self.files
+
+        # Si l'un des paramètres a changé, on recréé l'objet qui nous
+        # permet d'accéder à la gestion des répertoires et fichiers.
+        #
+        if (tree.walking_mode == walking_mode) \
+            and (tree.with_pathlib == with_pathlib) \
+            and (tree.with_fnmatch == with_fnmatch) \
+            and (tree.with_glob == with_glob):
+            #
+            # Rien n'a changé donc rien à faire !!!
+            #
+            log.debug("Configuration de la GESTION des FICHIERS :")
+            log.debug('==========================================')
+            log.debug("\tAUCUN des paramètres n'a été modifié.")
+            log.debug('\tDonc pas de changement dans la gestion')
+            log.debug('\t...... des répertoires et fichiers !!!')
+            log.debug('')
+
+        else:
+            self.files = FileSystemTree(
+                walking_mode = walking_mode,
+                with_pathlib = with_pathlib,
+                with_fnmatch = with_fnmatch,
+                with_glob = with_glob,
+                log = log
+                )
+
+
+    def search_files_from_a_mask(
+        self,
+        directory: os.PathLike = None,
+        mask: str = '*'
+        ) -> list:
+    	# -> list( STR ) [ ou ] list( PATHLIB.PATH )
+        """ Cherche dans un répertoire tous les FICHIERS qui
+        correspondent à un certain masque.
+
+        :param directory: le répertoire à explorer, au format
+        STRING ou PATHLIB.PATH....
+
+        :param mask: le masque de recherche, qui peut contenir
+        des « wildcards ». Ces wildcards sont soit ceux compris
+        par pathlib.glob(), glob.glob() ou fnmatch.filter(), soit
+        ceux compris par la méthode FileSystemLeaf._fake_iglob().
+        Dans ce dernier cas, les masques de recherche interprétés
+        sont :
+
+            - "*" : tous les fichiers.
+
+            - "*.xxx" : les fichiers d'un certain type.
+
+            - "title*.m*" : masque plus complexe.
+
+        Dans les autres cas ( i-e lorsque nous avons importé les
+        modules GLOB ou FNMATCH ou PATHLIB ), cf :
+
+            Cf https://docs.python.org/3/library/glob.html#glob.glob
+            Cf https://docs.python.org/3/library/fnmatch.html#fnmatch.filter
+            Cf https://docs.python.org/3/library/pathlib.html#pathlib.Path.glob
+        
+        :return: la liste des chemins des fichiers trouvés, au
+        format STRING ou PATHLIB.PATH, et ces fichiers seront
+        exprimés via un PATH ABSOLU.
+
+        ATTENTION : search_files_from_a_mask() ne renvoie QUE
+        des fichiers, tout répertoire est écarté du résultat !
+
+        ATTENTION : Si notre objet ScriptSkeleton est configuré
+        afin d'utiliser le module PATHLIB ( cf notre propriété
+        « with_pathlib » ) alors la liste en retour contiendra
+        des valeurs de type PATHLIB.PATH, sinon les valeurs de
+        la liste seront de type STRING !!!
+        """
+
+        log = self.logItem
+        node = self.files.node
 
         if directory is None:
 
@@ -2402,258 +4867,145 @@ class ScriptSkeleton:
 
         log.debug('Recherche de fichiers dans : %s.', directory)
 
-        # On initialise la liste des fichiers trouvés.
+        # Nous imposons que le retour de notre fonction soit
+        # une liste.
         #
-        found_files = []
-
-        # On regarde si l'on est face à une recherche simple
-        # ( du type "*" ou "*.nnn" ) ou face à une recherche
-        # plus complexe ( du type "title*.m*" ).
+        # En effet, si « self.with_pathlib == pathlib_direct » :
         #
-        # On a séparé ces 2 cas pour des raisons de performance
-        # mais le 1er n'est qu'un sous cas du 2nd, et on pourrait
-        # donc les réunir ( si l'on veut plus de simplicité du
-        # code )...
+        #   self.files.node(directory).glob(mask)
+        #   = < pathlib.Path >.glob(mask)
+        #   = un itérateur !!!
         #
-        if mask == '*':
-
-            # Cas d'1 chaîne de recherche très simple i-e : « * ».
-            #
-            simple_search = True
-            suffix = ''
-            log.debug('On accepte ici tous les fichiers.')
-
-        elif mask[0] == '*' and not '*' in mask[1:]:
-
-            # Cas d'1 chaîne de recherche simple i-e : « *< suffix > ».
-            #
-            simple_search = True
-            suffix = mask[1:]
-            log.debug("Recherche des fichiers d'extension : « %s ».", suffix)
-
-        else:
-
-            # Cas d'1 chaîne de recherche complexe telle : « title_t*.mkv ».
-            #
-            simple_search = False
-
-            index_suffix = mask.rfind('.')
-            if index_suffix >= 0:
-                suffix = mask[index_suffix:]
-            else:
-                suffix = ''
-
-            log.debug('Recherche de fichiers du type : « %s ».', mask)
-            log.debug('... donc avec « %s » comme extension.', suffix)
-
-        # On lance la recherche dans le répertoire.
+        # En effet, sous Python IDLE :
         #
-        if simple_search:
-
-            suffix_lower = suffix.lower()
-
-            for file_or_dir in os.listdir(directory):
-
-                # Si le fichier a le suffixe voulu, on l'intègre à la liste.
-                #
-                # Pour ceci, le plus "universel" est de vérifier que l'on trouve
-                # bien le suffixe cherché en toute fin du nom du fichier et, pour
-                # réaliser ce test, on utilise ici la méthode rfind().
-                #
-                # Cette fonction va trouver l'occurence, si elle existe, du suffixe
-                # que nous cherchons et qui serait située la plus à droite dans
-                # le nom du fichier. Si cette occurence est trouvée, rfind() nous
-                # informe de l'index dans le nom de fichier où l'on peut trouver
-                # cette occurence. Or si cet index est égal à la soustraction de
-                # la longueur du nom de fichier par la longueur du suffixe, c'est
-                # que le suffixe est bien situé en toute fin du nom de fichier...
-                #
-                # PAR CONTRE, pour réaliser la comparaison via rfind(), on convertit
-                # d'abord les 2 chaînes en minuscules, et ceci afin que, par exemple :
-                #
-                #       - si suffix = « .mkv » ;
-                #
-                #       - si certains fichiers finissent en « .mkv », d'autres en
-                # « .MKV », et d'autres en « .Mkv » ;
-                #
-                #       - alors tous ces fichiers ressortent dans la liste !!!
-                #
-                # Bien sûr, avant d'intégrer le fichier à la liste, on vérifie que
-                # c'est bien un fichier et non un répertoire !!! ( opération qui
-                # est certainement plus longue que les autres opérations de test
-                # donc on la réalise en dernier )
-                #
-                # ATTENTION : Avant, au regard de l'algorithme décrit ci-dessus,
-                # le test effectué était :
-                #
-                #       if suffix == '' or \
-                #       (file_or_dir.lower().rfind(suffix_lower) == len(file_or_dir) - len(suffix)):
-                #
-                # ... mais, pour des noms de fichiers courts, type « @i », ce test
-                # ( sa 2ème partie ) ne marchait pas avec, par exemple, « *.py » :
-                #
-            	#	    - file_or_dir = @i
-            	#	    - suffix_lower = .py
-            	#	    - file_or_dir.lower().rfind(suffix_lower) = -1 [ car échec de la recherche ]
-            	#	    - len(file_or_dir) - len(suffix) = 2 - 3 = -1
-                #
-                # ... d'où la réécriture de ce test ci-dessous.
-                #
-                # Ce teste marche d'ailleurs pour des données telles :
-                #
-                #       - masque = « *.py »
-                #       - fichier = « .py »
-                #
-                suffix_place = file_or_dir.lower().rfind(suffix_lower)
-
-                if suffix == '' or \
-                    (suffix_place >= 0 and \
-                     len(file_or_dir) >= len(suffix) and \
-                     suffix_place == len(file_or_dir) - len(suffix)):
-
-                    if os.path.isfile(file_or_dir):
-                        found_files.append(file_or_dir)
-
-        else:
-
-            # Conversion de la chaîne de recherche demandée en une liste afin
-            # de faciliter, par la suite, les comparaisons des noms de fichiers
-            # avec le masque de recherche...
+        #   import pathlib
+        #   lst = pathlib.Path('.').glob('*')
+        #   type(lst)
+        #
+        # -> result = <class 'generator'>
+        #
+        # ... Donc, si notre appelant s'attend à avoir 1 liste
+        # qu'il puisse réutiliser, alors il sera très surpris
+        # puisqu'une fois parcourue, cette liste deviendra vide
+        # ( propriété des itérateurs qui ne conservent pas leurs
+        # valeurs et ne peuvent donc les afficher qu'une fois et
+        # une seule ) !!! 
+        #
+        # Ainsi, sous IDLE :
+        #
+        #   for i in lst: print(i)
+    	#
+        # -> result =
+    	#	skeleton { SRC }.py
+    	#	skeleton.py
+    	#
+    	# ... puis :
+    	#
+        #	list(lst)
+    	#
+        # -> result = []
+    	#
+    	# Donc lorsque nous parcourons la liste, cela la vide !!!
+    	# Ce qui est bien le principe des itérateurs / générateurs.
+	    #
+        # D'où la syntaxe :
+        #
+        #   return list(self.files.node(directory).glob(mask))
+        #
+        # RQ : Depuis qu'1 compréhension de liste est utilisée,
+        # la syntaxe ci-dessus a disparu puisqu'1 compréhension
+        # fournit 1 liste en retour ( que sa syntaxe soit basée
+        # sur une liste ou sur un itérateur !!! ).
+        #
+        # RQ : Depuis, < FileSystemLeaf >.glob s'est mise aussi
+        # à renvoyer un itérateur ou générateur en retour ( et
+        # seulement cela ) et dans aucun cas une liste, ce qui
+        # justifie d'autant plus que nous transformions ceci
+        # en liste au regard de ce qu'attend notre appelant...
+        #
+        #
+        #   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        #   !!! EXEMPLE D'UTILISATION D'UNE COMPRÉHENSION DE LISTE !!!
+        #   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        #
+        #
+        only_files = [
             #
-            # On découpe ainsi le masque de recherche en considérant le caractère
-            # joker '*' comme un délimiteur.
+            # Nous utilisons une « compréhension de liste » pour
+            # écarter tout répertoire du résultat. En effet, nous
+            # ne souhaitons conserver que les fichiers.
             #
-            mask_list = mask.split('*')
-            log.debug('Le masque de recherche changé en liste vaut : %s.', mask_list)
-
-            # PAR CONTRE, pour réaliser les comparaisons, on va convertir les
-            # éléments en minuscules...
+            # node(directory).glob(mask) renvoie en effet autant
+            # des fichiers que des répertoires, puisque c'est le
+            # cas de :
             #
-            # Cf ci-dessus « PAR CONTRE, pour réaliser la comparaison via rfind() ».
+            #   . pathlib.glob()
+            #   . fnmatch.filter()
+            #   . glob.iglob()
+            #   . glob.glob()
             #
-            for idx, mask_part in enumerate(mask_list, start=0):
-                mask_list[idx] = mask_part.lower()
-            log.debug('La liste de recherche convertie en minuscules vaut : %s.', mask_list)
-
-            for file_or_dir in os.listdir(directory):
-                # Si on est face à un fichier ( et non un répertoire ), on va ici
-                # comparer si le nom de ce fichier correspond au masque désiré.
-                #
-                if os.path.isfile(file_or_dir):
-
-                    file_ok = True
-
-                    # Pour réaliser les comparaisons, on va convertir en minuscules.
-                    # Cf ci-dessus « PAR CONTRE, pour réaliser la comparaison via rfind() ».
-                    #
-                    file_name = file_or_dir.lower()
-
-                    # On va chercher si le nom du fichier contient chacune des
-                    # sous-chaînes de la liste correspondant au masque de recherche.
-                    #
-                    # ATTENTION : On ne teste ici "que" si la sous-chaîne se trouve
-                    # dans le nom de fichier. Pour être plus exact, il faudrait
-                    # vérifier, quand le masque est de type « xxx*(..)*zzz », si la
-                    # 1ère sous-chaîne est bien le début ( et exactement le début )
-                    # du nom de fichier...
-                    #
-                    #       en utilisant : file_name.startswith(mask_part)
-                    #
-                    # ... mais également vérifier que la dernière sous-chaîne est bien
-                    # la fin ( et exactement la fin ) du nom de fichier...
-                    #
-                    #       en utilisant : file_name.endswith(mask_part)
-                    #
-                    # ... Cela pourra faire l'objet, si nécessaire, d'1 développement
-                    # ultérieur.
-                    #
-                    # Pour l'instant, ce n'est pas très dérangeant, donc on laisse tel
-                    # quel. Du coup, pour les masques du type « xxx*(..)*zzz », cette
-                    # fonction réalise en fait une recherche du type :
-                    #
-                    #       « *xxx*(..)*zzz* »
-                    #
-                    # ADDENDUM : Le fait de réaliser une recherche type « *xxx*(..)*zzz* »
-                    # alors que nous a été demandé une recherche « xxx*(..)*zzz » est en
-                    # fait plus dérangeant que prévu. Ainsi, lors d'une recherche ayant
-                    # pour masque « title_t*.mkv », les solutions suivantes sont sorties
-                    # à l'écran ( !!! ) :
-                    #
-                    #       - ( 2 ) what to encode - from « title_t00.mkv ».cfg
-                    #       - title_t03.mkv
-                    #       - >>> CRÉATION d'un fichier de configuration [..] <<<
-                    #
-                    # EXPLICATIONS : Nous avons demandé « title_t*.mkv » donc, avec une
-                    # recherche « xxx*(..)*zzz », seul "title_t03.mkv" serait apparu.
-                    #
-                    # Mais comme nous avons réalisé une recherche « *xxx*(..)*zzz* »,
-                    # "( 2 ) what to encode - from « title_t00.mkv ».cfg" est aussi
-                    # valide dans ce cadre !!!
-                    #
-                    # Nous avons donc renvoyé à notre appelant ces 2 solutions...
-                    #
-                    # Or, search_files_from_a_mask() était alors appelée depuis le point
-                    # "3ème partie : On cherche" de la fonction MediaFile.choose_file(),
-                    # ce qui a provoqué, dans la suite des traitements ( "4ème partie :
-                    # On ajoute éventuellement des solutions possibles..." ) de choose_file(),
-                    # que la solution ">>> CRÉATION d'un fichier de configuration [..] <<<"
-                    # soit ajoutée. En effet, cette dernière est ajoutée automatiquement
-                    # si apparaît dans la liste des fichiers résultat au moins un .CFG !!!
-                    #
-                    # CONCLUSION : Il a fallu rendre plus exact l'algorithme ci-dessous
-                    # afin qu'une recherche type « xxx*(..)*zzz » ne soit plus traitée
-                    # comme une recherche type « *xxx*(..)*zzz* ».
-                    #
-                    # D'où l'ajout des 2 "if" couplés aux fonctions startswith() et
-                    # endswith().
-                    #
-                    # Il aurait été probablement plus efficace d'intégrer les tests
-                    # de ces "if" à la boucle "for" qui suit : en effet, dans cette
-                    # boucle "for", on teste de nouveau la 1ère et la dernière sous-
-                    # chaînes de recherche ( déjà testées dans les "if" ).
-                    #
-                    # Toutefois, d'une part, ces 2 "if" facilitent la lecture de l'
-                    # algorithme et, d'autre part, ils sont plus rapides à écrire !!!
-                    #
-                    # Lorsque j'aurais plus de temps, il sera possible d'améliorer
-                    # cet algorithme...
-                    #
-                    if mask[0] != '*' and not file_name.startswith(mask_list[0]):
-                        file_ok = False
-
-                    elif mask[len(mask) - 1] != '*' and \
-                            not file_name.endswith(mask_list[len(mask_list) - 1]):
-                        file_ok = False
-
-                    else:
-                        for mask_part in mask_list:
-
-                            if mask_part in file_name:
-                                # On trouve bien la sous-chaîne considérée dans le nom de
-                                # fichier. On retire alors du nom de fichier la séquence
-                                # "*<cette sous-chaîne>", puis on va continuer la boucle
-                                # afin de vérifier que les sous-chaînes suivantes sont bien
-                                # présentes dans ce qui reste du nom de fichier...
-                                #
-                                part_index_begin = file_name.index(mask_part)
-                                part_index_end = part_index_begin + len(mask_part)
-                                file_name = file_name[part_index_end:]
-
-                            else:
-                                # Une des sous-chaînes recherche n'est pas présente dans
-                                # le nom du fichier. On ne retient donc pas ce fichier...
-                                #
-                                file_ok = False
-                                break
-
-                    if file_ok:
-                        # Si toutes les sous-chaînes recherche étaient présentes dans
-                        # le nom du fichier, on ajoute ce fichier à la liste de retour...
-                        #
-                        found_files.append(file_or_dir)
-                        log.debug('Nouveau fichier trouvé : « %s ».', file_or_dir)
-
-        return found_files
+            # ... qui ne font pas le distingo entre les fichiers
+            # et les répertoires !!!
+            #
+            # Cf :
+            #
+            #   . https://docs.python.org/3/library/pathlib.html#pathlib.Path.glob
+            #   . https://docs.python.org/3/library/fnmatch.html#fnmatch.filter
+            #   . https://docs.python.org/3/library/glob.html#glob.iglob
+            #   . https://docs.python.org/3/library/glob.html#glob.glob
+            #
+            # Seule la fonction < FileSystemLeaf >._fake_iglob()
+            # permet d'indiquer si l'on veut récupérer tous les
+            # noeuds, les répertoires seuls, ou seulement les
+            # fichiers.
+            #
+            # Par ailleurs, nous voulons être sûrs de ne fournir
+            # que des paths ABSOLUS, d'où l'utilisation de la fct
+            # os.path.abspath() qui accepte en entrée autant des
+            # STRING que des pathlib.PATH. Ainsi, sous IDLE :
+            #
+            #   os.path.abspath('.')
+            # > 'K:\\_Know\\Info\\Dvpt\\Réalisation\\Src\\_Python\\[ skeleton ]'
+            #
+            #   pathlib.Path('.')
+            # > WindowsPath('.')
+            #
+            #   os.path.abspath(pathlib.Path('.'))
+            # > 'K:\\_Know\\Info\\Dvpt\\Réalisation\\Src\\_Python\\[ skeleton ]'
+            #
+            # La formule est donc devenue :
+            #
+            #   [ os.path.abspath(n)
+            #       for n in node(directory).glob(mask) \
+            #       if node(n).is_file() ]
+            #
+            # RQ : < FileSystemTree >.node() fournit des STRINGS
+            # ou des objets de type PATHLIB.PATH.
+            #
+            # Par la suite, pour une formulation respectueuse
+            # des différents types possibles, nous avons choisi
+            # d'écrire :
+            #
+            #   [ os.path.abspath(n) if type(n) == str else n.resolve() \
+            #     for n in node(directory).glob(mask) if node(n).is_file() ]
+            #
+            # On peut en effet tester les expresions suivantes
+            # sous IDLE :
+            #
+            #   [ os.path.abspath(n) if type(n) == str else n.resolve() \
+            #     for n in pathlib.Path().glob('*') if n.is_file() ]
+            #
+            #   [ os.path.abspath(n) if type(n) == str else n.resolve() \
+            #     for n in glob.glob('*') if os.path.isfile(n) ]
+            #
+            # Cela a considérablement alourdi la syntaxe, mais
+            # c'est à visée didactique.
+            #
+            os.path.abspath(n) if type(n) == str else n.resolve()
+                for n in node(directory).glob(mask) \
+                if node(n).is_file()
+            ]
+        return only_files
 
 
     def convert_to_pdf_init(
@@ -2752,7 +5104,8 @@ class ScriptSkeleton:
 
                 PHASE DE CONVERSION
 
-        :param *args: tuple des fichiers à convertir.
+        :param *args: tuple des fichiers à convertir, dont les
+        path seront du type STRING ou PATHLIB.PATH....
 
         :param wait: attend-t-on la fin de la conversion pour
         rendre la main à la fonction appelante ? ou pas...
@@ -2842,7 +5195,7 @@ class ScriptSkeleton:
                     #'--invisible',
                     '--convert-to', format_cible,
                     '--outdir', '.',
-                    file_in
+                    str(file_in)
                     ]
 
                 log.debug("Fichier à traiter = %s", file_in)
@@ -2888,7 +5241,8 @@ class ScriptSkeleton:
         ):
         """ Édition d'un ou plusieurs fichiers au format TXT.
 
-        :param *args: tuple des fichiers à éditer.
+        :param *args: tuple des fichiers à éditer, dont les
+        path seront du type STRING ou PATHLIB.PATH....
 
         :param wait: attend-t-on la fin de l'édition pour
         rendre la main à la fonction appelante ? ou pas...
@@ -2912,7 +5266,7 @@ class ScriptSkeleton:
                 # On lance l'éditeur de texte avec notre fichier
                 # comme paramètre.
                 #
-                command_line = [exe_txt_editor, file_to_edit]
+                command_line = [exe_txt_editor, str(file_to_edit)]
 
                 self.shw_debug(
                     f'Fichier à traiter = {file_to_edit}'
@@ -2961,7 +5315,8 @@ class ScriptSkeleton:
         ) -> set:
         """ Comparaison de 2 ou plusieurs fichiers.
 
-        :param *args: tuple des fichiers à comparer.
+        :param *args: tuple des fichiers à comparer, dont les
+        path seront du type STRING ou PATHLIB.PATH....
 
         :param action: comment veut-on comparer ?
         ( le fichier figurant en 1er constitue la RÉFÉRENCE )
@@ -2988,8 +5343,8 @@ class ScriptSkeleton:
         # sur les ensembles pour obtenir le
         # résultat cherché...
         #
-        with open(args[0], flag) as file1:
-            with open(args[1], flag) as file2:
+        with open(str(args[0]), flag) as file1:
+            with open(str(args[1]), flag) as file2:
 
                 if action == 'intersection':
                     # comparaison = set(file1).intersection(file2)
@@ -3066,8 +5421,10 @@ class ScriptSkeleton:
         # nous est donné n'est pas tout simplement
         # celui que nous recherchons...
         #
+        leaf = self.files.node
         alt_name = filename
-        if idx_force or os.path.exists(alt_name):
+        filenode = leaf(filename)
+        if idx_force or filenode.exists():
 
             # Nous sommes ici dans le cas où nous
             # devons construire un nom de fichier
@@ -3086,7 +5443,8 @@ class ScriptSkeleton:
             # F-STRING ne va donc interpréter que la
             # partie {idx_size}.
             #
-            basename, ext = os.path.splitext(filename)
+            ext = filenode.suffix
+            basename = filenode.stem
             format_mask = f' - {{:0{idx_size}d}}'
 
             suffix_n = idx_start
@@ -3113,7 +5471,7 @@ class ScriptSkeleton:
                 suffix = format_mask.format(suffix_n)
                 alt_name = basename + suffix + ext
 
-                if not os.path.exists(alt_name):
+                if not leaf(alt_name).exists():
                     break
 
                 suffix_n += 1
@@ -3127,7 +5485,7 @@ class ScriptSkeleton:
     def save_strings_to_file(
         self,
         *args,
-        destination: str,
+        destination: os.PathLike,
         ok_to_erase: bool = False,
         ask_confirm: bool = True,
         must_be_new: bool = False,
@@ -3175,7 +5533,8 @@ class ScriptSkeleton:
         """
 
         log = self.logItem
-        new_name = os.path.exists(destination)
+        node = self.files.node(destination)
+        new_name = node.exists()
 
         if new_name:
 
@@ -3195,9 +5554,7 @@ class ScriptSkeleton:
             # On créé un nouveau nom de fichier si celui
             # qui nous a été donné ne peut être utilisé.
             #
-            name, ext = os.path.splitext(destination)
-
-            tmp_dst = name + new_suffix + ext
+            tmp_dst = node.stem + new_suffix + node.suffix
 
             file_dst = self.get_unused_filename(
                 tmp_dst,
@@ -3209,7 +5566,7 @@ class ScriptSkeleton:
             # On peut se servir tel quel du nom de fichier
             # qui nous a été fourni.
             #
-            file_dst = destination
+            file_dst = str(destination)
 
         if coding is None:
 
@@ -3422,7 +5779,151 @@ if __name__ == "__main__":
     log.info('AUTOTESTS de : %s', __file__)
     log.info('==============')
     log.info('')
+
+
+    # #######################################################################
+    # -----------------------------------------------------------------------
+    # #######################################################################
+    # -----------------------------------------------------------------------
+    # #######################################################################
+    #
     log.info('')
+    log.info('\t=================================')
+    log.info('\t>>> CHOIX DE LA CONFIGURATION <<<')
+    log.info('\t=================================')
+    log.info('')
+    log.info('')
+
+    config_choice = [
+        'Module OS seul + os.listdir',
+        'Module OS seul + os.scandir',
+        'Utilisation du module GLOB',
+        'Utilisation du module FNMATCH + os.listdir',
+        'Utilisation du module FNMATCH + os.scandir',
+        'Utilisation du module PATHLIB « enfoui »',
+        'Utilisation du module PATHLIB « direct »',
+        ]
+
+    # Les tuples ci-dessous correspondent à l'initialisation
+    # des différentes variables ( avec l'ordre = with_glob,
+    # with_fnmatch, with_pathlib, walking_mode ) de chacune
+    # des configurations ci-dessus.
+    #
+    config_init = [
+        #
+        # Module OS seul + os.listdir
+        (False, False, pathlib_ignore, walking_via_listdir),
+        #
+        # Module OS seul + os.scandir
+        (False, False, pathlib_ignore, walking_via_scandir),
+        #
+        # Utilisation du module GLOB
+        (True,  False, pathlib_ignore, walking_via_listdir),
+        #
+        # Utilisation du module FNMATCH + os.listdir
+        (False, True,  pathlib_ignore, walking_via_listdir),
+        #
+        # Utilisation du module FNMATCH + os.scandir
+        (False, True,  pathlib_ignore, walking_via_scandir),
+        #
+        # Utilisation du module PATHLIB « enfoui »
+        (False, False, pathlib_deeply, walking_ignore),
+        #
+        # Utilisation du module PATHLIB « direct »
+        (False, False, pathlib_direct, walking_ignore),
+    ]
+
+    idx = skull.choose_in_a_list(config_choice, 0)
+
+    if idx < 0:
+        skull.shw("Aucun choix n'a été fait...")
+        skull.shw('-> « OS seul + os.listdir » imposé.')
+        idx = 0
+
+    else:
+        skull.shw(f'Votre réponse = {config_choice[idx]}')
+
+    skull.shw('')
+
+    w_glob, w_fnmatch, w_pathlib, walking_mode = config_init[idx]
+
+    skull.file_system_mode(
+        walking_mode = walking_mode,
+        with_pathlib = w_pathlib,
+        with_fnmatch = w_fnmatch,
+        with_glob = w_glob
+        )
+
+    if (w_pathlib == pathlib_direct):
+
+        node_file = skull.files.node(__file__ + '.test')
+
+        skull.shw('\tTOUTES les méthodes de PATHLIB sont alors disponibles.')
+        skull.shw(f'\tpath          = {node_file}')
+        skull.shw(f'\tpath.SUFFIXES = {node_file.suffixes}')
+        skull.shw(f'\tpath.PARENTS  = {len(list(node_file.parents))}'
+                    ' [ c-a-d len(list(path.parents)) ]')
+
+        log.debug('\tcar .PARENTS  = ')
+        for parent in list(node_file.parents):
+            log.debug('\t\t%s', parent)
+
+        skull.shw('')
+
+
+    # #######################################################################
+    # -----------------------------------------------------------------------
+    # #######################################################################
+    # -----------------------------------------------------------------------
+    # #######################################################################
+    #
+    user_answer = skull.ask_yes_or_no(
+        "Voulez-vous que je réalise les TESTS de COMPRÉHENSIONS de LISTE ?",
+        'non'
+        )
+
+    if user_answer:
+
+        # On affiche des résultats de compréhensions de
+        # liste à titre dicdactique.
+        #
+        # Ici, nous ne sommes donc pas vraiment dans de
+        # l'autotest... mais plus dans de la pédagogie.
+        #
+        log.info('')
+        log.info('\t===============================')
+        log.info('\t>>> COMPRÉHENSIONS de LISTE <<<')
+        log.info('\t===============================')
+        log.info('')
+        log.info('')
+
+        mask = "*[[]*[]]*"
+
+        log.info('Test et RÉSULTAT de :')
+        log.info('')
+        log.info(f'\t[ n for n in < current directory > if fnmatch.fnmatch( n.name, "{mask}" ) ]')
+        log.info('')
+        log.info('... où « n » est de type « FileSystelLeaf » ou « pathlib.Path » :')
+        log.info('')
+
+        try: fnmatch.translate('test_if*already_imported')
+        except AttributeError: import fnmatch
+
+        our_dir = skull.files.node().iterdir
+        our_lst = [n for n in our_dir() if fnmatch.fnmatch(n.name, mask)]
+
+        if len(our_lst) > 0:
+
+            for n in our_lst:
+                skull.shw(f'\t{n}')
+
+            skull.shw('')
+            skull.shw(f'\t=> DATATYPE for ALL objects = {type(our_lst[0])}')
+
+        else:
+            skull.shw('\tNO SUCH FILES OR DIRECTORIES')
+
+        skull.shw('')
 
 
     # #######################################################################
@@ -3486,14 +5987,170 @@ if __name__ == "__main__":
     # #######################################################################
     #
     user_answer = skull.ask_yes_or_no(
+        "Voulez-vous que je réalise mes AUTOTESTS de CONCATÉNATIONS de PATH ?",
+        'non'
+        )
+
+    if user_answer:
+
+        log.info('')
+        log.info('\t==============================')
+        log.info('\t>>> CONCATÉNATIONS de PATH <<<')
+        log.info('\t==============================')
+        log.info('')
+        log.info('')
+
+        leaf = skull.files.node
+
+        skull.shw('EXEMPLE 1 : Opérateur « / » + Opérandes « FileSystelLeaf » et « STRING »')
+        skull.shw('')
+
+        operande_1 = leaf(r"A:\blah\bleh\blih")
+        operande_2 = "ESSAI_n°1"
+        result = operande_1 / operande_2
+
+        skull.shw(f'\t« {str(operande_1)} »\tconcaténé avec\t« {str(operande_2)} »')
+        skull.shw(f'\t=> Résultat        = « {result} »')
+        skull.shw(f'\toù Type Opérande 1 = « {type(operande_1)} »')
+        skull.shw(f'\tet Type Opérande 2 = « {type(operande_2)} »')
+        skull.shw(f'\tet Type Résultat   = « {type(result)} »')
+        skull.shw('')
+
+        skull.shw('EXEMPLE 2 : Opérateur « / » + Opérandes « STRING » et « FileSystelLeaf » ( mais BUG car 2 disques indiqués !!! )')
+        skull.shw('')
+
+        operande_1 = r"B:\ESSAI_n°2"
+        operande_2 = leaf(r"C:\problème\car\deux\disques")
+        result = operande_1 / operande_2
+
+        skull.shw(f'\t« {str(operande_1)} »\tconcaténé avec\t« {str(operande_2)} »')
+        skull.shw(f'\t=> Résultat        = « {result} »')
+        skull.shw(f'\toù Type Opérande 1 = « {type(operande_1)} »')
+        skull.shw(f'\tet Type Opérande 2 = « {type(operande_2)} »')
+        skull.shw(f'\tet Type Résultat   = « {type(result)} »')
+        skull.shw('')
+
+        skull.shw(r"EXEMPLE 3 : Idem et 1er BUG réglé ( mais 2nd BUG car le « \ » de l'opérande 2 masque « problème\réglé » !!! )")
+        skull.shw('')
+
+        operande_1 = r"D:\problème\réglé"
+        operande_2 = leaf(r"\ESSAI_n°3")
+        result = operande_1 / operande_2
+
+        skull.shw(f'\t« {str(operande_1)} »\tconcaténé avec\t« {str(operande_2)} »')
+        skull.shw(f'\t=> Résultat        = « {result} »')
+        skull.shw(f'\toù Type Opérande 1 = « {type(operande_1)} »')
+        skull.shw(f'\tet Type Opérande 2 = « {type(operande_2)} »')
+        skull.shw(f'\tet Type Résultat   = « {type(result)} »')
+        skull.shw('')
+
+        skull.shw('EXEMPLE 4 : Opérateur « /= »')
+        skull.shw('')
+
+        operande_1 = leaf("Z:\\woah_wouh\\")
+        operande_2 = "ESSAI_n°4"
+        result = operande_1
+        result /= operande_2
+
+        skull.shw(f'\t« {str(operande_1)} »\tconcaténé avec\t« {str(operande_2)} »')
+        skull.shw(f'\t=> Résultat        = « {result} »')
+        skull.shw(f'\toù Type Opérande 1 = « {type(operande_1)} »')
+        skull.shw(f'\tet Type Opérande 2 = « {type(operande_2)} »')
+        skull.shw(f'\tet Type Résultat   = « {type(result)} »')
+        skull.shw('')
+
+
+    # #######################################################################
+    # -----------------------------------------------------------------------
+    # #######################################################################
+    # -----------------------------------------------------------------------
+    # #######################################################################
+    #
+    user_answer = skull.ask_yes_or_no(
         "Voulez-vous que je réalise mes AUTOTESTS de RECHERCHE de fichiers & ÉDITION format texte ?",
         'non'
         )
 
     if user_answer:
 
-        # On appelle search_files_from_a_mask() pour vérifier
-        # que Python ne plante pas en le parcourant.
+        # Dans un 1er temps, nous limitions le test de notre
+        # méthode _fake_iglob() aux seuls cas où la gestion
+        # du système de fichiers ne dépendait que du module
+        # OS ( et de os.path ) :
+        #
+        #   if not (w_glob or w_fnmatch) and w_pathlib == pathlib_ignore:
+        #
+        # Nous avons depuis élargi le nombre des cas où nous
+        # testions _fake_iglob(). Pour autant, ns ne testons
+        # pas cette méthode dans le mode « pathlib_direct »
+        # puisque, dans ce mode, la gestion du système de
+        # fichiers est totalement déléguée au module PATHLIB
+        # et à ses objets pathlib.PATH qui ne disposent pas
+        # d'une méthode _fake_iglob()... !!!
+        # 
+        if not (w_pathlib == pathlib_direct):
+
+            # On appelle _fake_iglob() pour vérifier que
+            # Python n'y plante pas.
+            #
+            log.info('')
+            log.info('\t=============================')
+            log.info('\t>>> TEST de _fake_iglob() <<<')
+            log.info('\t=============================')
+            log.info('')
+            log.info('Version FRUSTRE :')
+            log.info('-----------------')
+            log.info('')
+            log.info('Nous testons cette méthode dans le cas de fichiers ou répertoires seuls.')
+            log.info('Le cas « indifférencié » est scanné via « search_files_from_a_mask() ».')
+            log.info('')
+            log.info('')
+
+            t_name = {
+                _glob_only_dirs: 'SOUS-RÉPERTOIRES',
+                _glob_only_files: 'FICHIERS'
+            }
+
+            our_dir = skull.files.node()
+
+            for t in (_glob_only_dirs, _glob_only_files):
+
+                msg = t_name[t] + ' du répertoire courant :'
+
+                log.info('\t' + msg)
+                log.info('\t' + '~' * len(msg))
+
+                for n in sorted(our_dir._fake_iglob(n_type = t)):
+                    skull.shw(f'\t{n}')
+
+                skull.shw('')
+
+            print()
+            input("--- PAUSE avant la recherche suivante ---")
+            print()
+
+            log.info('')
+            log.info('Version FNMATCH :')
+            log.info('-----------------')
+            log.info('')
+
+            mask = '*[{(]*[)}]*'
+            mask_dct = our_dir._parse_mask(mask, _search_fnmatch)
+
+            log.info(f'Masque = {mask}')
+            log.info('')
+
+            for n in sorted(our_dir._fake_iglob(**mask_dct)):
+                skull.shw(f'\t{n}')
+
+            skull.shw('')
+
+            print()
+            input("--- PAUSE avant la recherche suivante ---")
+            print()
+
+        # On appelle search_files_from_a_mask() pour
+        # vérifier que Python n'y plante pas.
         #
         log.info('')
         log.info('\t==========================================')
@@ -3502,22 +6159,78 @@ if __name__ == "__main__":
         log.info('')
         log.info('')
 
-        files_found = skull.search_files_from_a_mask(
-            mask = '*.py'
+        # On défini dans la liste ( de n-uplets nommés )
+        # suivante toutes les recherches que nous allons
+        # mener. Ainsi :
+        #
+        #   1 - On va chercher tout d'abord des fichiers
+        #       *.ISO dans un répertoire lointain...
+        #
+        #   2 - Ensuite : tous les fichiers ( * ) dans un
+        #       répertoire proche...
+        #
+        #   3 - ...
+        #
+        #   x - Enfin : les fichiers *.py du répertoire de
+        #       travail.
+        #
+        try: collections
+        except NameError: import collections
+
+        Search = collections.namedtuple(
+            "Search",
+            ['mask', 'dir']
             )
 
-        log.debug('')
+        searches_todo = (
+            Search('*',     __file__),  # ERREUR = dans 1 fichier, non 1 répertoire
+            Search('*.iso', r"K:\_Backup.CDs\Comptabilité"),
+            Search('*',     r"..\all files to one PDF"),
+            #
+            # Ajouter ci-dessus d'éventuelles nouvelles
+            # recherches. Laisser la recheche '*.py' en
+            # tant que dernière de la liste ( en effet,
+            # son résultat nourrit le traitement qui la
+            # suit ).
+            #
+            Search('Sk*lE*.py',  None)
+            )
 
-        skull.shw('Fichier(s) trouvé(s) [ *.py ] :')
-        skull.shw('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
+        for idx, s in enumerate(searches_todo, start=0):
 
-        for file_name in sorted(files_found):
-            skull.shw('\t' + file_name)
+            if idx > 0:
+                input("--- PAUSE avant la recherche suivante ---")
+                print()
+                print()
 
-        skull.shw('')
+            files_found = skull.search_files_from_a_mask(
+                directory = s.dir,
+                mask = s.mask
+                )
+
+            msg_dir = f"« {s.mask} » in « {'.' if s.dir is None else s.dir} »"
+            msg_find = 9 * ' ' + f'---> Fichier(s) trouvé(s) :'
+            len_maxi = max(len(msg_dir), len(msg_find))
+
+            log.debug('')
+            skull.shw('~' * len_maxi)
+            skull.shw(msg_dir)
+            skull.shw(msg_find)
+            skull.shw('~' * len_maxi)
+
+            if files_found is None or len(files_found) == 0:
+                skull.shw('\tNO SUCH FILES or DIRECTORIES...')
+
+            else:
+                for file_name in sorted(files_found):
+                    skull.shw(f'\t{file_name}')
+                    skull.shw(f'\t\t=> DATATYPE = {type(file_name)}')
+
+            skull.shw('')
+            skull.shw('')
 
         user_answer = skull.ask_yes_or_no(
-            "Éditons-nous ces fichiers ( via notre éditeur de TXT ) ?",
+            f"Édition des fichiers {s.mask} ( via l'éditeur de TXT ) ?",
             'oui'
             )
 
@@ -3956,10 +6669,11 @@ if __name__ == "__main__":
         # On affecte des valeurs permettant le test.
         #
         working_path = skull.paths_and_miscellaneous['working_PATH_FULL']
+        working_node = leaf(working_path)
 
-        player_exe = os.path.join(working_path, 'mplay32.exe')
+        player_exe = str(working_node / 'mplay32.exe')
         player_arg = ['/play', '/close']
-        played = os.path.join(working_path, 'Windows XP Battery Low.wav')
+        played = str(working_node / 'Windows XP Battery Low.wav')
 
         skull.paths_and_miscellaneous['EXE_player'] = player_exe
         skull.paths_and_miscellaneous['ARG_player'] = player_arg
@@ -3967,7 +6681,7 @@ if __name__ == "__main__":
 
         # On teste l'émission via mplay32.exe d'un son de réveil.
         #
-        if os.path.isfile(player_exe) and os.path.isfile(played):
+        if leaf(player_exe).is_file() and leaf(played).is_file():
 
             skull.on_sonne_le_reveil()
 
