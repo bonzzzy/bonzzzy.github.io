@@ -5897,7 +5897,7 @@ if __name__ == "__main__":
         log.info('')
         log.info('')
 
-        mask = "*[[]*[]]*"
+        mask = "*[[@]*"
 
         log.info('Test et RÉSULTAT de :')
         log.info('')
@@ -6185,15 +6185,29 @@ if __name__ == "__main__":
         searches_todo = (
             Search('*',     __file__),  # ERREUR = dans 1 fichier, non 1 répertoire
             Search('*.iso', r"K:\_Backup.CDs\Comptabilité"),
-            Search('*',     r"..\all files to one PDF"),
+            Search('S*',    r".."),
+            Search('*.bat', r"..\all files to one PDF"),
+            Search('*',     r"..\Library"),            
             #
             # Ajouter ci-dessus d'éventuelles nouvelles
-            # recherches. Laisser la recheche '*.py' en
-            # tant que dernière de la liste ( en effet,
-            # son résultat nourrit le traitement qui la
-            # suit ).
+            # recherches. Laisser les 2 recherches qui
+            # suivent en dernière position.
+            #
+            # En effet, la dernière ( sk*le*.py ) de la
+            # liste = son résultat nourrit le traitement
+            # qui la suit.
+            #
+            # Par ailleurs, l'avant-dernière recherche
+            # ( Sk*lE*.py ) permet, elle, de tester si l'
+            # OS est sensible à la casse en fonction des
+            # différentes options choisies ( avec glob
+            # ou pas, avec fnmatch ou pas, ... ). C'est
+            # par exple le cas sous iPadOS 16.3.1 ( ie
+            # Darwin Kernel Version 22.3.0 avec PYTHON
+            # version 3.11.0 ).
             #
             Search('Sk*lE*.py',  None)
+            Search('sk*le*.py',  None)
             )
 
         for idx, s in enumerate(searches_todo, start=0):
