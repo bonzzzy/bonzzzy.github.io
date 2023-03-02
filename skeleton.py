@@ -832,7 +832,13 @@ class FileSystemTree:
             # Quel que soit le type de « location » ( pathlib.Path,
             # str, ... ) l'affectation suivante fonctionnera.
             #
-            self.location_string = str(os.fspath(location))
+            self.location_string = str(
+                os.path.normpath(
+                    os.fspath(
+                        location
+                        )
+                    )
+                )
 
             if tree.pathlib_import:
                 # Lorsque nous nous trouvons ici, alors notre mode
@@ -848,7 +854,7 @@ class FileSystemTree:
                 # manipulations via des appels à ses méthodes.
                 #
                 if isinstance(location, str):
-                    self.location_object = pathlib.Path(location)
+                    self.location_object = pathlib.Path(self.location_string)
 
                 elif isinstance(location, pathlib.PurePath):
                     self.location_object = location
@@ -6134,7 +6140,7 @@ if __name__ == "__main__":
             log.info('-----------------')
             log.info('')
 
-            mask = '*[{(]*[)}]*'
+            mask = '*[{(@]*'
             mask_dct = our_dir._parse_mask(mask, _search_fnmatch)
 
             log.info(f'Masque = {mask}')
@@ -6184,10 +6190,10 @@ if __name__ == "__main__":
 
         searches_todo = (
             Search('*',     __file__),  # ERREUR = dans 1 fichier, non 1 répertoire
-            Search('*.iso', r"K:\_Backup.CDs\Comptabilité"),
-            Search('S*',    r".."),
-            Search('*.bat', r"..\all files to one PDF"),
-            Search('*',     r"..\Library"),            
+            Search('*.iso', r"K:/_Backup.CDs/Comptabilité"),
+            Search('*',     r"../tmp"),
+            Search('(*',    r"../all files to one PDF"),
+            Search('*',     r"../Library"),            
             #
             # Ajouter ci-dessus d'éventuelles nouvelles
             # recherches. Laisser les 2 recherches qui
@@ -6206,7 +6212,7 @@ if __name__ == "__main__":
             # Darwin Kernel Version 22.3.0 avec PYTHON
             # version 3.11.0 ).
             #
-            Search('Sk*lE*.py',  None)
+            Search('Sk*lE*.py',  None),
             Search('sk*le*.py',  None)
             )
 
