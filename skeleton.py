@@ -6193,7 +6193,7 @@ if __name__ == "__main__":
             Search('*.iso', r"K:/_Backup.CDs/Comptabilité"),
             Search('*',     r"../tmp"),
             Search('(*',    r"../all files to one PDF"),
-            Search('*',     r"../StoreKit"),            
+            Search('r*',     r"../StoreKit"),            
             #
             # Ajouter ci-dessus d'éventuelles nouvelles
             # recherches. Laisser les 2 recherches qui
