@@ -812,6 +812,16 @@ class FileSystemTree:
 
             :param location: la localisation ( sous forme de STRING
             ou de pathlib.PATH ) de l'objet que nous représentons.
+            Pour expliciter ce path, le mieux est de le fournir à la
+            mode UNIX ( avec « / » comme séparateur ) plutôt qu'avec
+            la façon Windows ( avec « \ » comme séparateur ), même si
+            nous sommes sur un système Windows.
+
+                En effet, Python dispose d'une fonction pour changer
+                la notation UNIX en celle Windows ( os.path.normpath )
+                mais pas pour l'inverse. Or nous travaillons aussi,
+                entre autres, sur iPad + iOS, où « \ » ne sera pas
+                compris comme séparateur de PATH...
             """
 
             self.tree = tree
@@ -829,16 +839,32 @@ class FileSystemTree:
             #
             # +
             #
+            # Les PATH peuvent être écrits à la mode UNIX ( ie avec
+            # « / » comme séparateur ) ou celle Windows ( avec « \ »
+            # comme séparateur ).
+            #
+            # Cf ainsi :
+            #
+            #   https://docs.python.org/3/library/os.path.html#os.path.normpath
+            #
+            #   Normalize a pathname by collapsing redundant separators
+            #   and up-level references so that A//B, A/B/, A/./B and
+            #   A/foo/../B all become A/B. This string manipulation may
+            #   change the meaning of a path that contains symbolic links.
+            #
+            #   ON WINDOWS, IT CONVERTS FORWARD SLASHES TO BACKWARD SLASHES.
+            #
+            #   To normalize case, use normcase().
+            #
+            # Bref, nous mettons ceinture & bretelles pour nous assurer
+            # que le path indiqué soit bien compris !!!
+            #
+            location = os.path.normpath(os.fspath(location))
+
             # Quel que soit le type de « location » ( pathlib.Path,
             # str, ... ) l'affectation suivante fonctionnera.
             #
-            self.location_string = str(
-                os.path.normpath(
-                    os.fspath(
-                        location
-                        )
-                    )
-                )
+            self.location_string = str(location)
 
             if tree.pathlib_import:
                 # Lorsque nous nous trouvons ici, alors notre mode
@@ -3059,21 +3085,21 @@ class ScriptSkeleton:
                 # On liste ici les différents répertoires possibles, par ordre
                 # de la version la plus récente ( préférée ) à la plus ancienne.
                 #
-                r'C:\Program Files\Just Great Software\EditPad Pro',
-                r'C:\Program Files\EditPad Pro',
-                r'C:\Program Files\EditPadPro',
-                r'C:\Program Files\Just Great Software\EditPad Pro 8',
-                r'C:\Program Files\EditPad Pro 8',
-                r'C:\Program Files\EditPadPro8',
-                r'C:\Program Files\Just Great Software\EditPad Pro 7',
-                r'C:\Program Files\EditPad Pro 7',
-                r'C:\Program Files\EditPadPro7',
-                r'C:\Program Files\Just Great Software\EditPad Pro 6',
-                r'C:\Program Files\EditPad Pro 6',
-                r'C:\Program Files\EditPadPro6',
-                r'C:\Program Files\Just Great Software\EditPad Pro 5',
-                r'C:\Program Files\EditPad Pro 5',
-                r'C:\Program Files\EditPadPro5'
+                r"C:\Program Files\Just Great Software\EditPad Pro",
+                r"C:\Program Files\EditPad Pro",
+                r"C:\Program Files\EditPadPro",
+                r"C:\Program Files\Just Great Software\EditPad Pro 8",
+                r"C:\Program Files\EditPad Pro 8",
+                r"C:\Program Files\EditPadPro8",
+                r"C:\Program Files\Just Great Software\EditPad Pro 7",
+                r"C:\Program Files\EditPad Pro 7",
+                r"C:\Program Files\EditPadPro7",
+                r"C:\Program Files\Just Great Software\EditPad Pro 6",
+                r"C:\Program Files\EditPad Pro 6",
+                r"C:\Program Files\EditPadPro6",
+                r"C:\Program Files\Just Great Software\EditPad Pro 5",
+                r"C:\Program Files\EditPad Pro 5",
+                r"C:\Program Files\EditPadPro5"
             ]
 
             editpad_exe_list = [
@@ -6011,7 +6037,22 @@ if __name__ == "__main__":
         skull.shw('EXEMPLE 1 : Opérateur « / » + Opérandes « FileSystelLeaf » et « STRING »')
         skull.shw('')
 
-        operande_1 = leaf(r"A:\blah\bleh\blih")
+        # Nous écrivons nos PATH à la mode UNIX ( ie avec
+        # « / » comme séparateur ) car Python fournit des
+        # fonctions pour transformer cette notation UNIX
+        # vers celle Windows ( ie « \ » comme séparateur )
+        # mais pas pour l'inverse. Or nous lançons aussi,
+        # entre autres, ces tests sur iPad + iOS, où « \ »
+        # ne sera pas compris comme séparateur de PATH...
+        #
+        # Cf ainsi :
+        #
+        #   https://docs.python.org/3/library/os.path.html#os.path.normpath
+        #
+        #   (..) On Windows, it converts forward slashes
+        #   to backward slashes.
+        #
+        operande_1 = leaf(r"A:/blah/bleh/blih")
         operande_2 = "ESSAI_n°1"
         result = operande_1 / operande_2
 
@@ -6025,8 +6066,8 @@ if __name__ == "__main__":
         skull.shw('EXEMPLE 2 : Opérateur « / » + Opérandes « STRING » et « FileSystelLeaf » ( mais BUG car 2 disques indiqués !!! )')
         skull.shw('')
 
-        operande_1 = r"B:\ESSAI_n°2"
-        operande_2 = leaf(r"C:\problème\car\deux\disques")
+        operande_1 = r"B:/ESSAI_n°2"
+        operande_2 = leaf(r"C:/problème/car/deux/disques")
         result = operande_1 / operande_2
 
         skull.shw(f'\t« {str(operande_1)} »\tconcaténé avec\t« {str(operande_2)} »')
@@ -6039,8 +6080,8 @@ if __name__ == "__main__":
         skull.shw(r"EXEMPLE 3 : Idem et 1er BUG réglé ( mais 2nd BUG car le « \ » de l'opérande 2 masque « problème\réglé » !!! )")
         skull.shw('')
 
-        operande_1 = r"D:\problème\réglé"
-        operande_2 = leaf(r"\ESSAI_n°3")
+        operande_1 = r"D:/problème/réglé"
+        operande_2 = leaf(r"/ESSAI_n°3")
         result = operande_1 / operande_2
 
         skull.shw(f'\t« {str(operande_1)} »\tconcaténé avec\t« {str(operande_2)} »')
@@ -6053,7 +6094,7 @@ if __name__ == "__main__":
         skull.shw('EXEMPLE 4 : Opérateur « /= »')
         skull.shw('')
 
-        operande_1 = leaf("Z:\\woah_wouh\\")
+        operande_1 = leaf("Z://woah_wouh//")
         operande_2 = "ESSAI_n°4"
         result = operande_1
         result /= operande_2
@@ -6188,12 +6229,27 @@ if __name__ == "__main__":
             ['mask', 'dir']
             )
 
+        # Nous écrivons nos PATH à la mode UNIX ( ie avec
+        # « / » comme séparateur ) car Python fournit des
+        # fonctions pour transformer cette notation UNIX
+        # vers celle Windows ( ie « \ » comme séparateur )
+        # mais pas pour l'inverse. Or nous lançons aussi,
+        # entre autres, ces tests sur iPad + iOS, où « \ »
+        # ne sera pas compris comme séparateur de PATH...
+        #
+        # Cf ainsi :
+        #
+        #   https://docs.python.org/3/library/os.path.html#os.path.normpath
+        #
+        #   (..) On Windows, it converts forward slashes
+        #   to backward slashes.
+        #
         searches_todo = (
             Search('*',     __file__),  # ERREUR = dans 1 fichier, non 1 répertoire
             Search('*.iso', r"K:/_Backup.CDs/Comptabilité"),
-            Search('*',     r"../tmp"),
+            Search('*.*',   r"../tmp"),
             Search('(*',    r"../all files to one PDF"),
-            Search('r*',     r"../StoreKit"),            
+            Search('r*',    r"../StoreKit"),            
             #
             # Ajouter ci-dessus d'éventuelles nouvelles
             # recherches. Laisser les 2 recherches qui
