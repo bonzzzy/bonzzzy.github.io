@@ -6248,7 +6248,7 @@ if __name__ == "__main__":
             Search('*',     __file__),  # ERREUR = dans 1 fichier, non 1 répertoire
             Search('*.iso', r"K:/_Backup.CDs/Comptabilité"),
             Search('*.*',   r"../tmp"),
-            Search('(*',    r"../all files to one PDF"),
+            Search('-*',    r"../all files to one PDF"),
             Search('r*',    r"../StoreKit"),            
             #
             # Ajouter ci-dessus d'éventuelles nouvelles
