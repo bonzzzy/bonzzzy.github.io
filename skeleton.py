@@ -52,7 +52,7 @@ glob = None
 
 # Pour ce qui est du module PATHLIB, faudra-t-il l'importer pour l'utiliser ?
 # Si oui, devra-t-il être utilisé directement ( via des objets pathlib.PATH )
-# ou devra-t-on l'encapsuler dans un objet FileSystemLeaf ?
+# ou devra-t-on l'encapsuler dans un objet _FileSystemLeaf ?
 #
 # ATTENTION : Si le module PATHLIB est importé, certaines fonctions de notre
 # script renverront des valeurs de type PATHLIB.PATH en tant que paths, sinon
@@ -65,6 +65,13 @@ glob = None
 pathlib_ignore = None
 pathlib_direct = 'pathlib_direct'
 pathlib_deeply = 'pathlib_embedded'
+
+# Quel comportement vis-à-vis du module PATHLIB notre ScriptSkeleton va-t-il
+# utiliser par défaut ?
+#
+___dflt_pathlib___ = pathlib_ignore
+#___dflt_pathlib___ = pathlib_deeply
+#___dflt_pathlib___ = pathlib_direct
 
 # Si nous parcourons un répertoire en utilisant le module OS.PATH, le ferons
 # -nous via la la fonction os.listdir() ou via os.scandir() ?
@@ -83,7 +90,7 @@ walking_via_scandir = 'os.scandir'
 #
 #   - CONSTANTES et fonctions générales ( _show_(), etc )
 #
-#   - Définition et fonctions des classes FileSystemTree + FileSystemLeaf
+#   - Définition et fonctions des classes FileSystemTree + _FileSystemLeaf
 #
 #   - Définition de la classe ScriptSkeleton ( __init__() et __del__() )
 #
@@ -103,6 +110,7 @@ walking_via_scandir = 'os.scandir'
 #
 #   - Fonctions d'initialisation des EXÉCUTABLES et RÉPERTOIRES utilisés :
 #
+#                       . def search_path_from_masks
 #   ( in autotests )    . def set_paths_and_miscellaneous
 #                       . def get_paths_and_miscellaneous
 #                       . def show_paths_and_miscellaneous
@@ -290,7 +298,7 @@ def _show_(msg, journal = None):
 #
 #   PARTIE :
 #   ~~~~~~~~
-#   Définition et fonctions des classes FileSystemTree + FileSystemLeaf.
+#   Définition et fonctions des classes FileSystemTree + _FileSystemLeaf.
 #
 # ---------------------------------------------------------------------------
 
@@ -339,7 +347,7 @@ _searches_lst = (
 # Itérateur / GÉNÉRATEUR vide.
 #
 # Il s'agit du générateur qui sera renvoyé par la méthode
-# Glob() de la classe FileSystemTree.FileSystemLeaf dans
+# Glob() de la classe FileSystemTree._FileSystemLeaf dans
 # certains où son résultat serait vide.
 #
 def _generator_empty():
@@ -471,7 +479,7 @@ class FileSystemTree:
     des utilisateurs de ce script.
 
     REMARQUE : Par CONVENTION, les méthodes de FileSystemTree et
-    celles de sa « inner class » FileSystemLeaf, sont IDENTIQUES
+    celles de sa « inner class » _FileSystemLeaf, sont IDENTIQUES
     ( i.e ont le même nom, la même définition ) que les méthodes
     présentes dans le module PATHLIB.
 
@@ -490,17 +498,17 @@ class FileSystemTree:
     ATTENTION : Si l'import direct de PATHLIB est demandé ( mode
     « pathlib_direct » ), toute fonction fournie par PATHLIB sera
     accessible, même si non déclarées / surchargées dans la classe
-    incluse FileSystemLeaf !!!
+    incluse _FileSystemLeaf !!!
 
         En effet, si l'on travaille de façon directe avec le module
         PATHLIB, alors FileSystemTree.node() renvoie directement un
-        objet PATHLIB et cela va shunter la classe FileSystemLeaf et
+        objet PATHLIB et cela va shunter la classe _FileSystemLeaf &
         ses méthodes. L'objet pathlib.Path sera en effet directement
         appelé !!!
 
         Toutes les fonctions PATHLIB sont alors disponibles, en tout
         cas pour celles au niveau d'une instance ( ie du même niveau
-        que nos objets FileSystemLeaf ). Pour les méthodes de classe
+        que nos objets _FileSystemLeaf ). Pour les méthodes de classe
         ( telles cwd(), home(), ... ), elles doivent être codées au
         niveau de notre classe FileSystemTree.
     """
@@ -528,7 +536,7 @@ class FileSystemTree:
             cette informat°, la méthode par défaut ( ie os.listdir()
             sera utilisée ).
 
-            RQ = Cf FileSystemTree.FileSystemLeaf.iterdir()
+            RQ = Cf FileSystemTree._FileSystemLeaf.iterdir()
 
             RQ = Si les modules GLOB ou FNMATCH sont importés, cela
             n'impose pas le walking_mode et il faut le spécifier !
@@ -546,7 +554,7 @@ class FileSystemTree:
 
             * pathlib_deeply : nous utiliserons le module PATHLIB &
             notre méthode FileSystemTree.node() renverra des objets
-            de type FileSystemLeaf ( qui inqueront eux-même 1 objet
+            de type _FileSystemLeaf ( qui inqueront eux-même 1 objet
             pathlib.Path interne ).
 
         :param with_fnmatch: cet objet peut-il utiliser FNMATCH ?
@@ -677,19 +685,19 @@ class FileSystemTree:
 
     def node(
         self,
-        location: os.PathLike = None
+        location = None     # _FileSystemLeaf [ ou ] os.PathLike
         ) -> object:
-        # -> FileSystemLeaf [ ou ] PATHLIB.PATH
+        # -> _FileSystemLeaf [ ou ] PATHLIB.PATH
         """ Pour créer un objet de GESTION d'un NOEUD du système
         de fichiers ( fichiers ou répertoires ), afin de pouvoir
         accéder à ce noeud et / ou le manipuler.
 
         Si nous sommes en mode « pathlib_direct », cette méthode
         renverra 1 objet de type « pathlib.Path » & notre classe
-        interne FileSystemLeaf ne sera donc pas utilisée pour la
+        interne _FileSystemLeaf ne sera donc pas utilisée pour la
         gestion du système de fichiers.
 
-        Dans tous les autres cas, FileSystemLeaf sera l'objet qui
+        Dans tous les autres cas, _FileSystemLeaf sera l'objet qui
         permettra d'accéder au noeud défini par « location ». Cet
         objet appelera les fonctions adéquates des modules OS.PATH
         ou PATHLIB.
@@ -697,8 +705,10 @@ class FileSystemTree:
         Cf https://docs.python.org/3/library/pathlib.html#correspondence-to-tools-in-the-os-module
 
         :param location: la localisation du fichier ou répertoire
-        à gérer. Cette donnée peut-être au format « string » voire
-        « pathlib.Path ».
+        à gérer. Cette donnée peut-être au format « os.PathLike »
+        ( ie « string » ou « pathlib.Path » ) voire être du type
+        « _FileSystemLeaf ». Dans ce dernier cas, notre fonction
+        node() renverra l'objet « _FileSystemLeaf » lui-même !!!
 
         :param return: l'objet pour GESTION du répertoire ou du
         fichier sous-jacent.
@@ -707,12 +717,12 @@ class FileSystemTree:
         # Si aucune localisation n'est indiquée, nous considérons
         # qu'il s'agit du répertoire courant.
         #        
-        if location is None or location == '':
+        if location is None or str(location) == '':
             location = '.'
 
         # Si l'on travaille en direct avec le module PATHLIB, alors
         # on renvoie l'objet PATHLIB créé, ce qui va shunter notre
-        # classe FileSystemLeaf & ses méthodes. L'objet pathlib.Path
+        # classe _FileSystemLeaf & ses méthodes. L'objet pathlib.Path
         # sera en effet directement appelé !!!
         #
         # Toutes les fonctions PATHLIB sont alors disponibles, en tout
@@ -724,23 +734,36 @@ class FileSystemTree:
         #
         #   https://docs.python.org/fr/3/library/pathlib.html
         #
-        if self.pathlib_direct:
+        if self.pathlib_direct: 
+            # Dans ce cas, « location » est obligatoirement du type
+            # « os.PathLike », car les objets « _FileSystemLeaf »
+            # sont shuntés et ne sont jamais créés.
+            #
+            # On peut donc donner directement « location » comme
+            # information à pathlib.Path().
+            #
             return pathlib.Path(location)
 
-        # Nous créons sinon un objet FileSystemLeaf, dont la tâche
+        # Si la localisation est déjà un objet _FileSystemLeaf,
+        # alors il n'y a aucune transformation à faire !!!
+        #
+        elif isinstance(location, FileSystemTree._FileSystemLeaf):
+            return location
+
+        # Nous créons sinon un objet _FileSystemLeaf, dont la tâche
         # sera d'encapsuler le module OS.PATH ou le module PATHLIB.
-        # La tâche de cet objet FileSystemLeaf est d'offrir une API
+        # La tâche de cet objet _FileSystemLeaf est d'offrir une API
         # ( interface ) similaire à celle de PATHLIB ( au moins pour
-        # les méthodes implémentées dans FileSystemLeaf : les autres
+        # les méthodes implémentées dans _FileSystemLeaf : les autres
         # fonctions de PATHLIB ne seront pas disponibles tant que non
-        # présentes parmi les méthodes de FileSystemLeaf ).
+        # présentes parmi les méthodes de _FileSystemLeaf ).
         #
         else:
-            return self.FileSystemLeaf(self, location)
+            return self._FileSystemLeaf(self, location)
 
 
-    class FileSystemLeaf:
-        """ FileSystemLeaf est une classe d'objets qui permettent
+    class _FileSystemLeaf:
+        """ _FileSystemLeaf est une classe d'objets qui permettent
         d'accéder à un noeud ( fichier, répertoire ) du système de
         fichiers. Cet objet appelle la fonction adéquate du module
         sous-jacent ( OS.PATH ou PATHLIB ).
@@ -750,7 +773,7 @@ class FileSystemTree:
         de fichiers. FileSystemTree ne manipulera que des objets du
         type « pathlib.Path ».
 
-        REMARQUE : Par CONVENTION, les méthodes de FileSystemLeaf
+        REMARQUE : Par CONVENTION, les méthodes de _FileSystemLeaf
         sont IDENTIQUES ( i.e même nom, même définition ) à celles
         équivalents présentes dans PATHLIB. Nous avons choisi de
         coder la même API ( interface ).
@@ -759,7 +782,7 @@ class FileSystemTree:
 
         REMARQUE : J'aurais pu « désindenter » cette classe afin
         d'en faire une classe à part entière, non incluse, mais
-        j'ai préféré garder cette construction car FileSystemLeaf
+        j'ai préféré garder cette construction car _FileSystemLeaf
         n'est utilisée qu'avec FileSystemTree...
 
         J'ai donc gardé ce système de « nested class », bien qu'il
@@ -774,11 +797,11 @@ class FileSystemTree:
 
         ATTENTION : Pour des restrictions dans la gestions des PATHS
         ABSOLUS et RELATIFS, cf l'entête de notre méthode resolve()
-        où est expliqué l'une des restrictions de FileSystemLeaf ie
+        où est expliqué l'une des restrictions de _FileSystemLeaf ie
         cf :
                 « ATTENTION = Lorsqu'un path n'est pas absolu »
 
-        Il y est ainsi suggéré une évolution de FileSystemLeaf...
+        Il y est ainsi suggéré une évolution de _FileSystemLeaf...
         """
 
         # La définition suivante :
@@ -787,12 +810,12 @@ class FileSystemTree:
         #
         # ... provoque à l'exécution l'erreur :
         #
-        #   File "K:\_Know\Info\Dvpt\Réalisation\Src\_Python\[ skeleton ]\skeleton { SRC }.py", line 330, in FileSystemLeaf
+        #   File "K:\_Know\Info\Dvpt\Réalisation\Src\_Python\[ skeleton ]\skeleton { SRC }.py", line 330, in _ileSystemLeaf
         #       def __init__(self, tree: FileSystemTree, location):
         #       NameError: name 'FileSystemTree' is not defined
         #
         # Il y a donc un problème de visibilité du nom de la classe
-        # FileSystemTree dans sa classe incluse FileSystemLeaf ( ie
+        # FileSystemTree dans sa classe incluse _FileSystemLeaf ( ie
         # « nested class » ou « inner class » ).
         #
         # Je n'ai pas trouvé la notation qui permettrait de spécifier
@@ -871,7 +894,7 @@ class FileSystemTree:
                 # d'exécution est « pathlib_deeply ».
                 #
                 # Ainsi, nous utilisons le module PATHLIB, mais pas
-                # directement. Un objet FileSystemLeaf est créé afin
+                # directement. Un objet _FileSystemLeaf est créé afin
                 # d'accéder et / ou manipuler un noeud du système de
                 # fichiers.
                 #
@@ -910,15 +933,15 @@ class FileSystemTree:
             self,
             path: os.PathLike
             ) -> object:
-            # -> FileSystemLeaf [ ou ] NotImplemented
+            # -> _FileSystemLeaf [ ou ] NotImplemented
             """ Tout comme dans PATHLIB, nous utilisons l'opérateur de
             division ( / ) pour concaténer des localisations ( path ).
 
             Ainsi :
 
-                FileSystemLeaf(« Z:\woah_wouh\ ») / str(« ESSAI_n°4 »)
+                _FileSystemLeaf(« Z:\woah_wouh\ ») / str(« ESSAI_n°4 »)
 
-                = FileSystemLeaf(« Z:\woah_wouh\ESSAI_n°4 »)
+                = _FileSystemLeaf(« Z:\woah_wouh\ESSAI_n°4 »)
             """
 
             if self.tree.pathlib_import:
@@ -926,11 +949,11 @@ class FileSystemTree:
                 # d'exécution est « pathlib_deeply ».
                 #
                 # Ainsi, nous utilisons le module PATHLIB, mais pas
-                # directement. Un objet FileSystemLeaf est créé afin
+                # directement. Un objet _FileSystemLeaf est créé afin
                 # d'accéder et / ou manipuler un noeud du système de
                 # fichiers, via les méthodes du module PATHLIB.
                 #
-                return FileSystemTree.FileSystemLeaf(
+                return FileSystemTree._FileSystemLeaf(
                     self.tree,
                     self.location_object.__truediv__(path)
                     )
@@ -941,7 +964,7 @@ class FileSystemTree:
                 # émuler les méthodes de PATHLIB.
                 #
                 try:
-                    return FileSystemTree.FileSystemLeaf(
+                    return FileSystemTree._FileSystemLeaf(
                         self.tree,
                         os.path.join(self.location_string, path)
                         )
@@ -957,15 +980,15 @@ class FileSystemTree:
             self,
             path: os.PathLike
             ) -> object:
-            # -> FileSystemLeaf [ ou ] NotImplemented
+            # -> _FileSystemLeaf [ ou ] NotImplemented
             """ Tout comme dans PATHLIB, nous utilisons l'opérateur de
             division ( / ) pour concaténer des localisations ( path ).
 
             Ainsi :
 
-                str(« Z:\woah_wouh\ ») / FileSystemLeaf(« ESSAI_n°4 »)
+                str(« Z:\woah_wouh\ ») / _FileSystemLeaf(« ESSAI_n°4 »)
 
-                = FileSystemLeaf(« Z:\woah_wouh\ESSAI_n°4 »)
+                = _FileSystemLeaf(« Z:\woah_wouh\ESSAI_n°4 »)
             """
 
             if self.tree.pathlib_import:
@@ -973,11 +996,11 @@ class FileSystemTree:
                 # d'exécution est « pathlib_deeply ».
                 #
                 # Ainsi, nous utilisons le module PATHLIB, mais pas
-                # directement. Un objet FileSystemLeaf est créé afin
+                # directement. Un objet _FileSystemLeaf est créé afin
                 # d'accéder et / ou manipuler un noeud du système de
                 # fichiers, via les méthodes du module PATHLIB.
                 #
-                return FileSystemTree.FileSystemLeaf(
+                return FileSystemTree._FileSystemLeaf(
                     self.tree,
                     self.location_object.__rtruediv__(path)
                     )
@@ -988,7 +1011,7 @@ class FileSystemTree:
                 # émuler les méthodes de PATHLIB.
                 #
                 try:
-                    return FileSystemTree.FileSystemLeaf(
+                    return FileSystemTree._FileSystemLeaf(
                         self.tree,
                         os.path.join(path, self.location_string)
                         )
@@ -1009,7 +1032,7 @@ class FileSystemTree:
                 # d'exécution est « pathlib_deeply ».
                 #
                 # Ainsi, nous utilisons le module PATHLIB, mais pas
-                # directement. Un objet FileSystemLeaf est créé afin
+                # directement. Un objet _FileSystemLeaf est créé afin
                 # d'accéder et / ou manipuler un noeud du système de
                 # fichiers, via les méthodes du module PATHLIB.
                 #
@@ -1032,7 +1055,7 @@ class FileSystemTree:
                 # d'exécution est « pathlib_deeply ».
                 #
                 # Ainsi, nous utilisons le module PATHLIB, mais pas
-                # directement. Un objet FileSystemLeaf est créé afin
+                # directement. Un objet _FileSystemLeaf est créé afin
                 # d'accéder et / ou manipuler un noeud du système de
                 # fichiers, via les méthodes du module PATHLIB.
                 #
@@ -1055,7 +1078,7 @@ class FileSystemTree:
                 # d'exécution est « pathlib_deeply ».
                 #
                 # Ainsi, nous utilisons le module PATHLIB, mais pas
-                # directement. Un objet FileSystemLeaf est créé afin
+                # directement. Un objet _FileSystemLeaf est créé afin
                 # d'accéder et / ou manipuler un noeud du système de
                 # fichiers, via les méthodes du module PATHLIB.
                 #
@@ -1079,7 +1102,7 @@ class FileSystemTree:
                 # d'exécution est « pathlib_deeply ».
                 #
                 # Ainsi, nous utilisons le module PATHLIB, mais pas
-                # directement. Un objet FileSystemLeaf est créé afin
+                # directement. Un objet _FileSystemLeaf est créé afin
                 # d'accéder et / ou manipuler un noeud du système de
                 # fichiers, via les méthodes du module PATHLIB.
                 #
@@ -1106,7 +1129,7 @@ class FileSystemTree:
                 # d'exécution est « pathlib_deeply ».
                 #
                 # Ainsi, nous utilisons le module PATHLIB, mais pas
-                # directement. Un objet FileSystemLeaf est créé afin
+                # directement. Un objet _FileSystemLeaf est créé afin
                 # d'accéder et / ou manipuler un noeud du système de
                 # fichiers, via les méthodes du module PATHLIB.
                 #
@@ -1133,7 +1156,7 @@ class FileSystemTree:
                 # d'exécution est « pathlib_deeply ».
                 #
                 # Ainsi, nous utilisons le module PATHLIB, mais pas
-                # directement. Un objet FileSystemLeaf est créé afin
+                # directement. Un objet _FileSystemLeaf est créé afin
                 # d'accéder et / ou manipuler un noeud du système de
                 # fichiers, via les méthodes du module PATHLIB.
                 #
@@ -1158,7 +1181,7 @@ class FileSystemTree:
                 # d'exécution est « pathlib_deeply ».
                 #
                 # Ainsi, nous utilisons le module PATHLIB, mais pas
-                # directement. Un objet FileSystemLeaf est créé afin
+                # directement. Un objet _FileSystemLeaf est créé afin
                 # d'accéder et / ou manipuler un noeud du système de
                 # fichiers, via les méthodes du module PATHLIB.
                 #
@@ -1173,13 +1196,13 @@ class FileSystemTree:
                 return extension
 
 
-        #def resolve(self) -> FileSystemLeaf:
-        #def resolve(self) -> FileSystemTree.FileSystemLeaf:
+        #def resolve(self) -> _FileSystemLeaf:
+        #def resolve(self) -> FileSystemTree._FileSystemLeaf:
         #
         # Les 2 définitions ci-dessus génèrent un plantage du script
         # dès sa lecture par Python ( sans même exécution... ) :
         #
-        #   . NameError: name 'FileSystemLeaf' is not defined
+        #   . NameError: name '_FileSystemLeaf' is not defined
         #   . NameError: name 'FileSystemTree' is not defined
         #
         # ... d'où la définition ci-dessous.
@@ -1223,13 +1246,13 @@ class FileSystemTree:
 
             C'est donc elle que nous utilisons.
 
-            :return: Un objet FileSystemLeaf contenant un path absolu
+            :return: Un objet _FileSystemLeaf contenant un path absolu
             et normalisé.
             
             ATTENTION = Lorsqu'un path n'est pas absolu, la fonction
             os.path.abspath() renvoie un chemin ayant pour référence
             le répertoire courant. Si ce n'était pas le répertoire
-            réel de référence de cet objet FileSystemLeaf, le calcul
+            réel de référence de cet objet _FileSystemLeaf, le calcul
             du résultat sera alors FAUX !!!
 
             Cf https://docs.python.org/3/library/os.path.html#os.path.abspath
@@ -1248,7 +1271,7 @@ class FileSystemTree:
                     return self._from_parts([self._accessor.getcwd()] + self._parts)
 
             Pour faire mieux, il nous faudrait changer la structure de
-            données de FileSystemLeaf et scanner / conserver toutes les
+            données de _FileSystemLeaf et scanner / conserver toutes les
             parties du chemin qu'elle représente ( tout comme cela est
             fait dans PATHLIB en fait !!! ).
 
@@ -1289,17 +1312,17 @@ class FileSystemTree:
             # ci-dessous !!!
             #
             # D'ailleurs, .resolve est invoquée à l'endroit en question
-            # uniquement au cas où l'objet ne soit pas un FileSystemLeaf
+            # uniquement au cas où l'objet ne soit pas un _FileSystemLeaf
             # mais un objet de type pathlib.PATH...
             #
             # Les lignes ci-dessous ne seront donc atteintes que si nous
             # utilisons notre méthode .resolve() ailleurs, sans avoir pris
-            # garde de modifier le code de FileSystemLeaf.
+            # garde de modifier le code de _FileSystemLeaf.
             #
             log_debug = self.tree.write_in_log
 
             log_debug('\tATTENTION : Suite à un problème de structure de données,')
-            log_debug('\t< FileSystemLeaf >.resolve() ne sait PAS garantir un PATH')
+            log_debug('\t< _FileSystemLeaf >.resolve() ne sait PAS garantir un PATH')
             log_debug('\tabsolu CORRECT... !!!')
             log_debug('')
             log_debug('\tCf les remarques contenues dans « skeleton { SRC }.py » à :')
@@ -1322,14 +1345,14 @@ class FileSystemTree:
             log_debug('')
             log_debug('\tNous ne terminons pas le script pour autant.')
 
-            return FileSystemTree.FileSystemLeaf(
+            return FileSystemTree._FileSystemLeaf(
                         self.tree,
                         os.path.abspath(self.location_string)
                         )
 
 
         def iterdir(self) -> object:
-            # ( itérateur / générateur ) -> FileSystemLeaf [ ou ] PATHLIB.PATH
+            # ( itérateur / générateur ) -> _FileSystemLeaf [ ou ] PATHLIB.PATH
             """Iterate over the files in this directory. Does not
             yield any result for the special paths '.' and '..'.
 
@@ -1337,7 +1360,7 @@ class FileSystemTree:
             créé grâce à l'instruction YIELD présente dans son code ).
 
             Ce générateur renvoie alors une suite de données soit de
-            type FileSystemLeaf, soit de type PATHLIB.PATH.
+            type _FileSystemLeaf, soit de type PATHLIB.PATH.
 
             Pour être plus précis, iterdir() renvoie, dans certains
             cas, directement un itérateur :
@@ -1347,14 +1370,14 @@ class FileSystemTree:
                 méthode pathlib.Path.iterdir().
 
                 . si notre mode d'exécution est « pathlib_direct »,
-                cette méthode < FileSystemLeaf >.iterdir() ne sera
+                cette méthode < _FileSystemLeaf >.iterdir() ne sera
                 pas appelée, pathlib.Path.iterdir() va la shunter
                 et donc ce sera aussi directement un itérateur qui
                 donnera les résultats.
 
             Mais que ce soit un GÉNÉRATEUR ou un ITÉRATEUR, c'est
             transparent pour notre appelant : dans les 2 cas, il
-            verra défiler soit une suite de FileSystemLeaf, soit
+            verra défiler soit une suite de _FileSystemLeaf, soit
             une suite de variables PATHLIB.PATH.
 
             Cf :
@@ -1364,9 +1387,9 @@ class FileSystemTree:
                 https://docs.python.org/3/library/pathlib.html#pathlib.Path.iterdir
 
             :return: les valeurs retournées par l'itérateur seront
-            une suite soit de FileSystemLeaf, soit de PATHLIB.PATH.
+            une suite soit de _FileSystemLeaf, soit de PATHLIB.PATH.
 
-                Lorsqu'il s'agit de variables FileSystemLeaf, nous
+                Lorsqu'il s'agit de variables _FileSystemLeaf, nous
                 nous assurons que la valeur retournée contienne un
                 PATH ABSOLU.
 
@@ -1376,7 +1399,7 @@ class FileSystemTree:
                 RELATIFS. En effet, dans ce cas, les résultats seront
                 directement ceux de la méthode pathlib.Path.iterdir(),
                 que ce soit en mode « pathlib_deeply » ( mode que nous
-                pourrions contrôler via < FileSystemLeaf >.iterdir() )
+                pourrions contrôler via < _FileSystemLeaf >.iterdir() )
                 ou en « pathlib_direct » ( mode que nous ne savons pas
                 contrôler puisque direct : d'où le choix de conserver
                 le fonctionnement intrinsèque de PATHLIB ).
@@ -1402,7 +1425,7 @@ class FileSystemTree:
                 # d'exécution est « pathlib_deeply ».
                 #
                 # Ainsi, nous utilisons le module PATHLIB, mais pas
-                # directement. Un objet FileSystemLeaf est créé afin
+                # directement. Un objet _FileSystemLeaf est créé afin
                 # d'accéder et / ou manipuler un noeud du système de
                 # fichiers, via les méthodes du module PATHLIB.
                 #
@@ -1456,7 +1479,7 @@ class FileSystemTree:
                 #   Cf  --- FILES and PATH --- ( mes ) NOTES = path ABSOLU [ vs ] RELATIF in os, pathlib, fnmatch + CONCATÉNATION de paths absolu et relatif.txt
                 #   in _Know\Info\Dvpt\Réalisation\Langages\Python\- et - FICHIERS.rar
                 #
-                fct = lambda x: FileSystemTree.FileSystemLeaf(
+                fct = lambda x: FileSystemTree._FileSystemLeaf(
                         self.tree,
                         os.path.abspath(x.path)
                         )
@@ -1495,7 +1518,7 @@ class FileSystemTree:
                 #   Cf --- FILES and PATH --- ( mes ) NOTES = pathlib.ITERDIR [ vs ] os.LISTDIR [ vs ] os.SCANDIR = PATH affiché en ABSOLU ou RELATIF ---.py
                 #   in _Know\Info\Dvpt\Réalisation\Langages\Python\- et - FICHIERS.rar
                 #
-                fct = lambda x: FileSystemTree.FileSystemLeaf(
+                fct = lambda x: FileSystemTree._FileSystemLeaf(
                         self.tree,
                         os.path.abspath(
                             os.path.join(
@@ -2163,7 +2186,7 @@ class FileSystemTree:
                         log_debug(f'\t\t=> DATATYPE = {type(file_or_dir)}')
 
                         # Notre méthode .iterdir() ne fournit un PATH ABSOLU
-                        # que dans le cas où elle renvoie des FileSystemLeaf.
+                        # que dans le cas où elle renvoie des _FileSystemLeaf.
                         # Dans ce cas, nous pourrions donc n'écrire que :
                         #
                         #   yield str(file_or_dir)
@@ -2229,7 +2252,7 @@ class FileSystemTree:
 
             Qq chose comme :
 
-                for name in < FileSystemTree.FileSystemLeaf >.glob('*.py'):
+                for name in < FileSystemTree._FileSystemLeaf >.glob('*.py'):
                     print('\t' + name)
 
             ... pourrait ainsi planter notre script dans le 2nd cas.
@@ -2344,11 +2367,11 @@ class FileSystemTree:
                 # d'objets os.Pathlike. Or notre méthode iterdir()
                 # fournit 1 liste d'objets soit typés pathlib.Path
                 # ( classe incluse dans os.Pathlike ), soit typés
-                # FileSystemLeaf ( classe inconnue de os.Pathlike )
+                # _FileSystemLeaf ( classe inconnue de os.Pathlike )
                 # donc nous utilisons la fonction MAPS() afin que
                 # soit appliquée la méthode STR() à chacun de ces
                 # objets, et ainsi que fnmatch.filter() puisse les
-                # comprendre, même s'ils sont typés FileSystemLeaf,
+                # comprendre, même s'ils sont typés _FileSystemLeaf,
                 # car le type STRING est inclus dans os.Pathlike.
                 #
                 # D'où la 1ère solution adoptée :
@@ -2428,7 +2451,7 @@ class FileSystemTree:
                 # d'exécution est « pathlib_deeply ».
                 #
                 # Ainsi, nous utilisons le module PATHLIB, mais pas
-                # directement. Un objet FileSystemLeaf est créé afin
+                # directement. Un objet _FileSystemLeaf est créé afin
                 # d'accéder et / ou manipuler un noeud du système de
                 # fichiers, via les méthodes du module PATHLIB.
                 #
@@ -2539,7 +2562,7 @@ class FileSystemTree:
                 # d'exécution est « pathlib_deeply ».
                 #
                 # Ainsi, nous utilisons le module PATHLIB, mais pas
-                # directement. Un objet FileSystemLeaf est créé afin
+                # directement. Un objet _FileSystemLeaf est créé afin
                 # d'accéder et / ou manipuler un noeud du système de
                 # fichiers, via les méthodes du module PATHLIB.
                 #
@@ -2577,7 +2600,7 @@ class ScriptSkeleton:
         arguments: list = None,
         debug_mode: bool = ___debug___,
         walking_mode: str = walking_via_listdir,
-        with_pathlib: str = pathlib_ignore,
+        with_pathlib: str = ___dflt_pathlib___,
         with_fnmatch: bool = False,
         with_glob: bool = False
         ):
@@ -2615,7 +2638,7 @@ class ScriptSkeleton:
             RQ = Si les modules GLOB ou FNMATCH sont importés, cela
             n'impose pas le walking_mode et il faut le spécifier !
 
-            RQ = Cf FileSystemTree.FileSystemLeaf.iterdir()
+            RQ = Cf FileSystemTree._FileSystemLeaf.iterdir()
 
         :param with_pathlib: ce « squelette » va-t-il s'appuyer sur
         le module PATHLIB, ou simplement se servir de la librairie
@@ -2787,6 +2810,111 @@ class ScriptSkeleton:
 # ---------------------------------------------------------------------------
 
 
+    def search_path_from_masks(
+        self,
+        root,           # _FileSystemLeaf, pathlib.Path
+        masks,          # iterable, iterator, generator
+        ) -> (
+            object,     # _FileSystemLeaf, pathlib.Path
+            os.PathLike # chemin du fichier recherché
+        ):
+        """ Cette fonction permet de rechercher un fichier ( une DLL ou
+        un exécutable par exemple ) à partir d'une certaine localisation
+        et en cheminant le long d'un chemin indiqué par des masques.
+
+        Par exemple, pour trouver EditPadPro?.exe, à partir du répertoire
+        « Program Files », nous aurons comme paramètres :
+
+            root = r"C:\Program Files"
+            masks = ( 'Just*Great*Software', 'EditPad*Pro*', 'EditPadPro*.exe' )
+
+        Puisque plusieurs versions de EditPad Pro peuvent être présentes
+        sur une même machine, cette façon de faire trouvera :
+
+            C:\Program Files\Just Great Software\EditPad Pro 8\EditPadPro8.exe
+            C:\Program Files\Just-Great-Software\EditPadPro 7\EditPadPro7.exe
+            C:\Program Files\Just_Great_Software\EditPadPro6\EditPadPro6.exe
+            ...
+
+        Puisque nous parcourons l'arborescence en ordre décroissant, et
+        car nous stoppons au 1er fichier trouvé, search_path_from_masks()
+        répondra alors :
+
+            C:\Program Files\Just Great Software\EditPad Pro 8\EditPadPro8.exe
+
+        :param root: la racine à partir de laquelle nous devons débuter
+        nos recherches.
+
+        :param masks: une suite de valeurs (toutes au format STRING )
+        décrivant le cheminement dont nous pensons qu'il peut nous mener
+        depuis « root » au fichier recherché. La dernière de ces valeurs
+        doit expliciter le nom du fichier cherché. Ainsi :
+
+            ( 'Libre*Office*', '*program*', 's*office.exe' )
+
+        :return: un t-uple contenant 2 valeurs =
+
+                - l'objet répertoire contenant le fichier trouvé ( objet
+                de type _FileSystemLeaf ou pathlib.Path ).
+
+                - le chemin complet du fichier recherché.
+        """
+
+        log = self.logItem
+        leaf = self.files.node
+        last_level = ( len(masks) == 1 )
+
+        # On recherche le premier masque dans la racine, car il faut bien
+        # commencer nos recherches qq part !!!
+        #
+        # Pour chacun des noeuds dont le nom correspond à ce masque, nous
+        # allons en explorer l'arborescence.
+        #
+        for n in sorted(root.glob(masks[0]), reverse = True):
+
+            # « n » est de type STRING ou PATHLIB.PATH.
+            #
+            log.debug('')
+            log.debug('NOEUD TESTÉ = %s', n)
+            log.debug('')
+
+            # S'il n'y a qu'un seul masque dans la liste, nous comprenons
+            # qu'il s'agit d'un masque de fichier... Nous cherchons alors
+            # s'il existe dans « root » un fichier correspondant au masque
+            # recherché.
+            #
+            if last_level:
+
+                if leaf(n).is_file():
+                    # Nous avons trouvé le 1er fichier qui correspond à
+                    # notre recherche : comme nous avons trié en ordre
+                    # décroissant, on peut espérer qu'il s'agit de la
+                    # version la plus récente...
+                    #
+                    log.debug('Répertoire retenu = %s', root)
+                    log.debug('Fichier retenu = %s', n)
+
+                    return root, n
+
+            # Sinon, on parcourt les répertoires dont le nom commence par
+            # le masque voulu...
+            #
+            # On descend ainsi dans l'arborescence, on met donc le premier
+            # masque de côté, et on examine les suivants.
+            #
+            else:
+
+                dir, exe = self.search_path_from_masks(root / n, masks[1:])
+
+                if exe is not None:
+                    # Si la recherche dans l'arborescence a trouvé une
+                    # valeur, nous la retournons.
+                    #
+                    return dir, exe
+
+        return None, None
+
+
     def show_paths_and_miscellaneous(
         self,
         printer = print, # function
@@ -2919,6 +3047,10 @@ class ScriptSkeleton:
 
         log = self.logItem
         leaf = self.files.node
+
+        l_office_exe = None
+        l_writer_exe = None
+        exe_txt_editor = None
 
         # ATTENTION : PERSONNALISATION de notre mode DEBUG
         # -----------
@@ -3061,92 +3193,101 @@ class ScriptSkeleton:
         if os.name.upper() == 'NT':
 
             root = os.environ['SYSTEMROOT']
+            root_node = leaf(root)
+            programs = leaf(r"C:\Program Files")
 
-            # On considère que LibreOffice est tjrs au même endroit...
+            # On recherche le répertoire de LibreOffice.
             #
-            libre_office_dir = r"C:\Program Files\LibreOffice\program"
-            libre_office_node = leaf(libre_office_dir)
-            libre_office_exec = str(libre_office_node / "soffice.exe")
-            libre_writer_exec = str(libre_office_node / "swriter.exe")
+            log.debug("Recherche de LIBRE OFFICE :")
+            log.debug("~~~~~~~~~~~~~~~~~~~~~~~~~~~")
 
-            # Edit Pad Pro peut-être "rangé" / installé dans plusieurs
-            # répertoires différents suivant les machines, suivant que
-            # j'ai utilisé le répertoire par défaut lors de l'installation,
-            # ou que j'ai pensé à modifier ce répertoire ( pour coller à mon
+            # Description du cheminement dont nous pensons qu'il peut nous
+            # mener depuis « Program Files » à l'exécutable de LibreOffice.
+            #
+            masks = ( "Libre*Office*", "program", "soffice.exe" )
+
+            dir, exe = self.search_path_from_masks(programs, masks)
+
+            if exe is not None:
+                l_office_exe = str(exe)
+                l_writer_exe = str(dir / "swriter.exe")
+
+            log.debug('')
+
+            # « Edit Pad Pro » peut être "rangé" / installé dans plusieurs
+            # répertoires différents suivant les machines, suivant que j'ai
+            # utilisé le répertoire par défaut lors de l'installation, ou
+            # que j'ai pensé à modifier ce répertoire ( pour coller à mon
             # ancienne habitude... ).
             #
             # Le mieux serait ici de lire dans le registre Windows l'endroit
-            # où se trouve Edit Pad Pro !!! ( plutôt que cette infâme verrue ).
+            # où se trouve Edit Pad Pro !!!
             #
-            # Cela dit, il peut y avoir plusieurs version d'EditPad Pro hébergées
-            # sur une même machine...
+            # Cela dit, il peut y avoir plusieurs version d'EditPad Pro
+            # hébergées sur une même machine...
             #
-            editpad_dir_list = [
-                # On liste ici les différents répertoires possibles, par ordre
-                # de la version la plus récente ( préférée ) à la plus ancienne.
+            # AVANT nous utilisions 2 listes pour retrouver « Edit Pad Pro »
+            # ( une infâme verrue en fait... ), 2 listes que nous parcourions
+            # l'une après l'autre, via 2 boucles « for » :
+            #
+            #   editpad_dir_list = [
+            #       # On liste ici les différents répertoires possibles, par ordre
+            #       # de la version la plus récente ( préférée ) à la plus ancienne.
+            #       #
+            #       r"C:\Program Files\Just Great Software\EditPad Pro",
+            #       r"C:\Program Files\EditPad Pro",
+            #       r"C:\Program Files\EditPadPro",
+            #       r"C:\Program Files\Just Great Software\EditPad Pro 8",
+            #       r"C:\Program Files\EditPad Pro 8",
+            #       r"C:\Program Files\EditPadPro8",
+            #       r"C:\Program Files\Just Great Software\EditPad Pro 7",
+            #       (..)
+            #   ]
+            #
+            #   editpad_exe_list = [
+            #       # On liste ici les différents exécutables possibles, par ordre
+            #       # de la version la plus récente ( préférée ) à la plus ancienne.
+            #       #
+            #       'EditPadPro8.exe',
+            #       'EditPadPro7.exe',
+            #       (..)
+            #   ]
+            #
+            # PUIS la méthode search_path_from_masks() a été écrite et cela
+            # a simplifié la recherche...
+            #
+            log.debug("Recherche de EDIT PAD PRO : dans « Just*Great*Software* »")
+            log.debug("~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+
+            # Description du cheminement dont nous pensons qu'il peut nous
+            # mener depuis « Program Files » à l'exécutable de Edit Pad Pro.
+            #
+            masks = ( "Just*Great*Software*", "Edit*Pad*Pro*", "Edit*Pad*Pro*.exe" )
+
+            _, exe = self.search_path_from_masks(programs, masks)
+
+            if exe is None:
+                # En cas d'échec, nous testons un chemin alternatif : il se peut
+                # que le sous-répertoire soit directement dans « Program Files ».
                 #
-                r"C:\Program Files\Just Great Software\EditPad Pro",
-                r"C:\Program Files\EditPad Pro",
-                r"C:\Program Files\EditPadPro",
-                r"C:\Program Files\Just Great Software\EditPad Pro 8",
-                r"C:\Program Files\EditPad Pro 8",
-                r"C:\Program Files\EditPadPro8",
-                r"C:\Program Files\Just Great Software\EditPad Pro 7",
-                r"C:\Program Files\EditPad Pro 7",
-                r"C:\Program Files\EditPadPro7",
-                r"C:\Program Files\Just Great Software\EditPad Pro 6",
-                r"C:\Program Files\EditPad Pro 6",
-                r"C:\Program Files\EditPadPro6",
-                r"C:\Program Files\Just Great Software\EditPad Pro 5",
-                r"C:\Program Files\EditPad Pro 5",
-                r"C:\Program Files\EditPadPro5"
-            ]
+                log.debug('')
+                log.debug("Recherche de EDIT PAD PRO : dans « Program Files »")
+                log.debug("~~~~~~~~~~~~~~~~~~~~~~~~~~~")
 
-            editpad_exe_list = [
-                # On liste ici les différents exécutables possibles, par ordre
-                # de la version la plus récente ( préférée ) à la plus ancienne.
-                #
-                'EditPadPro8.exe',
-                'EditPadPro7.exe',
-                'EditPadPro.exe'
-            ]
+                _, exe = self.search_path_from_masks(programs, masks[1:])
 
-            dir_txt_editor = None
-            exe_txt_editor = None
-
-            log.debug("Recherche d'EditPad Pro :")
-        
-            for dir_to_try in editpad_dir_list:
-
-                log.debug('Répertoire testé = %s', dir_to_try)
-
-                if leaf(dir_to_try).is_dir():
-                    dir_txt_editor = dir_to_try
-                    log.debug('Répertoire retenu = %s', dir_txt_editor)
-                    break
-    
-            if dir_txt_editor is not None:
-                dir_txt_node = leaf(dir_txt_editor)
-
-                for exe_to_try in editpad_exe_list:
-
-                    log.debug('Fichier testé = %s', exe_to_try)
-                    file_to_test = dir_txt_node / exe_to_try
-
-                    if file_to_test.is_file():
-                        exe_txt_editor = str(file_to_test)
-                        log.debug('Fichier retenu = %s', exe_txt_editor)
-                        break
-
-            root_node = leaf(root)
-
-            if exe_txt_editor is None:
+            if exe is None:
                 # Si l'on n'a pas trouvé EditPadPro, on se rabat sur Notepad.
                 #
-                exe_txt_editor = str(root_node / 'notepad.exe')
-                log.debug('Fichier retenu = %s', exe_txt_editor)
+                log.debug('')
+                log.debug("Recherche de EDIT PAD PRO : ÉCHEC")
+                log.debug("~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+                log.debug('Fichier retenu = %s', exe)
+
+                exe = str(root_node / 'notepad.exe')
 
             log.debug('')
+            exe_txt_editor = exe
 
             # Seulement dans le cas de Windows XP, et ceci afin de jouer
             # un son, on a besoin d'un player et d'un fichier multimédia.
@@ -3217,12 +3358,6 @@ class ScriptSkeleton:
             #
             # Sinon, on va droit au PLANTAGE !!!
             #
-            exe_txt_editor = None
-
-            libre_office_dir = None
-            libre_office_exec = None
-            libre_writer_exec = None
-
             player_exe = None
             player_arg = None
             played = None
@@ -3237,9 +3372,8 @@ class ScriptSkeleton:
 
         self.paths_and_miscellaneous['EXE_txt_editor'] = exe_txt_editor
 
-        self.paths_and_miscellaneous['DIR_libre_office'] = libre_office_dir
-        self.paths_and_miscellaneous['EXE_libre_office'] = libre_office_exec
-        self.paths_and_miscellaneous['EXE_libre_writer'] = libre_writer_exec
+        self.paths_and_miscellaneous['EXE_libre_office'] = l_office_exe
+        self.paths_and_miscellaneous['EXE_libre_writer'] = l_writer_exe
 
         self.paths_and_miscellaneous['EXE_player'] = player_exe
         self.paths_and_miscellaneous['ARG_player'] = player_arg
@@ -4786,7 +4920,7 @@ class ScriptSkeleton:
             RQ = Si les modules GLOB ou FNMATCH sont importés, cela
             n'impose pas le walking_mode et il faut le spécifier !
 
-            RQ = Cf FileSystemTree.FileSystemLeaf.iterdir()
+            RQ = Cf FileSystemTree._FileSystemLeaf.iterdir()
 
         :param with_pathlib: ce « squelette » va-t-il s'appuyer sur
         le module PATHLIB, ou simplement se servir de la librairie
@@ -4850,7 +4984,7 @@ class ScriptSkeleton:
         :param mask: le masque de recherche, qui peut contenir
         des « wildcards ». Ces wildcards sont soit ceux compris
         par pathlib.glob(), glob.glob() ou fnmatch.filter(), soit
-        ceux compris par la méthode FileSystemLeaf._fake_iglob().
+        ceux compris par la méthode _FileSystemLeaf._fake_iglob().
         Dans ce dernier cas, les masques de recherche interprétés
         sont :
 
@@ -4949,7 +5083,7 @@ class ScriptSkeleton:
         # fournit 1 liste en retour ( que sa syntaxe soit basée
         # sur une liste ou sur un itérateur !!! ).
         #
-        # RQ : Depuis, < FileSystemLeaf >.glob s'est mise aussi
+        # RQ : Depuis, < _FileSystemLeaf >.glob s'est mise aussi
         # à renvoyer un itérateur ou générateur en retour ( et
         # seulement cela ) et dans aucun cas une liste, ce qui
         # justifie d'autant plus que nous transformions ceci
@@ -4986,7 +5120,7 @@ class ScriptSkeleton:
             #   . https://docs.python.org/3/library/glob.html#glob.iglob
             #   . https://docs.python.org/3/library/glob.html#glob.glob
             #
-            # Seule la fonction < FileSystemLeaf >._fake_iglob()
+            # Seule la fonction < _FileSystemLeaf >._fake_iglob()
             # permet d'indiquer si l'on veut récupérer tous les
             # noeuds, les répertoires seuls, ou seulement les
             # fichiers.
@@ -6248,7 +6382,7 @@ if __name__ == "__main__":
             Search('*',     __file__),  # ERREUR = dans 1 fichier, non 1 répertoire
             Search('*.iso', r"K:/_Backup.CDs/Comptabilité"),
             Search('*.*',   r"../tmp"),
-            Search('-*',    r"../all files to one PDF"),
+            Search('(*',    r"../all files to one PDF"),
             Search('r*',    r"../StoreKit"),            
             #
             # Ajouter ci-dessus d'éventuelles nouvelles
