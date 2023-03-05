@@ -3192,8 +3192,8 @@ class ScriptSkeleton:
         #
         if os.name.upper() == 'NT':
 
-            root = os.environ['SYSTEMROOT']
-            root_node = leaf(root)
+            nt_dir = os.environ['SYSTEMROOT']
+            nt_node = leaf(nt_dir)
             programs = leaf(r"C:\Program Files")
 
             # On recherche le répertoire de LibreOffice.
@@ -3284,7 +3284,7 @@ class ScriptSkeleton:
                 log.debug("~~~~~~~~~~~~~~~~~~~~~~~~~~~")
                 log.debug('Fichier retenu = %s', exe)
 
-                exe = str(root_node / 'notepad.exe')
+                exe = str(nt_node / 'notepad.exe')
 
             log.debug('')
             exe_txt_editor = exe
@@ -3312,9 +3312,9 @@ class ScriptSkeleton:
                 # de cette méthode est que le son est réglable et que
                 # cela marche sur un PC de bureau comme sur un portable...
                 #
-                player_exe = str(root_node / 'System32' / 'mplay32.exe')
+                player_exe = str(nt_node / 'System32' / 'mplay32.exe')
                 player_arg = ['/play', '/close']
-                played = str(root_node / 'Media' / 'Windows XP Battery Low.wav')
+                played = str(nt_node / 'Media' / 'Windows XP Battery Low.wav')
 
             else:
                 player_exe = None
