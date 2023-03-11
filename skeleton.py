@@ -627,7 +627,7 @@ class FileSystemTree:
 
 
     def cwd(self) -> os.PathLike:
-        # -> STR [ ou ] PATHLIB.PATH
+        # -> _FileSystemLeaf [ ou ] PATHLIB.PATH
         """ Pour connaître le RÉPERTOIRE de TRAVAIL.
 
         RQ : Les méthodes de classe ( telles cwd() ou home() )
@@ -638,19 +638,19 @@ class FileSystemTree:
 
             https://docs.python.org/fr/3/library/pathlib.html
 
-        :return: le répertoire de travail, au format STRING ou
-        PATHLIB.PATH...
+        :return: le répertoire de travail, au format pathlib.Path
+        ou _FileSystemLeaf...
         """
 
         if self.pathlib_import:
             return pathlib.Path.cwd()
 
         else:
-            return os.getcwd()
+            return self._FileSystemLeaf(self, os.getcwd())
   
 
     def home(self) -> os.PathLike:
-        # -> STR [ ou ] PATHLIB.PATH
+        # -> _FileSystemLeaf [ ou ] PATHLIB.PATH
         """ Pour connaître le RÉPERTOIRE de l'UTILISATEUR.
 
         RQ : Les méthodes de classe ( telles cwd() ou home() )
@@ -661,8 +661,8 @@ class FileSystemTree:
 
             https://docs.python.org/fr/3/library/pathlib.html
 
-        :return: le « home directory », au format STRING ou au
-        format PATHLIB.PATH...
+        :return: le « home directory », au format pathlib.Path
+        ou _FileSystemLeaf...
         """
 
         if self.pathlib_import:
@@ -680,7 +680,7 @@ class FileSystemTree:
             #
             #   Bref, autant utiliser expanduser('~') !!!
             #
-            return os.path.expanduser('~')
+            return self._FileSystemLeaf(self, os.path.expanduser('~'))
 
 
     def node(
@@ -703,6 +703,15 @@ class FileSystemTree:
         ou PATHLIB.
 
         Cf https://docs.python.org/3/library/pathlib.html#correspondence-to-tools-in-the-os-module
+       
+        ATTENTION ( !!! ) : PRUDENCE LORSQUE L'ON STOCKE UNE VALEUR
+        DU TYPE ScriptSkeleton.file_system_mode(). En effet, si l'
+        on modifie par la suite le comportement interne de skeleton
+        ( via notre méthode ScriptSkeleton.file_system_mode() ), on
+        peut se retrouver avec des BUGS dus à des types qui ne sont
+        PAS COMPATIBLES ( _FileSystemLeaf vs pathlib.Path ) !!!
+
+            Cf « ( ! ) ATTENTION ( ! ) : Choix a été fait de stocker »
 
         :param location: la localisation du fichier ou répertoire
         à gérer. Cette donnée peut-être au format « os.PathLike »
@@ -931,7 +940,8 @@ class FileSystemTree:
 
         def __truediv__(
             self,
-            path: os.PathLike
+            #path: os.PathLike
+            path: object     # _FileSystemLeaf [ ou ] os.PathLike
             ) -> object:
             # -> _FileSystemLeaf [ ou ] NotImplemented
             """ Tout comme dans PATHLIB, nous utilisons l'opérateur de
@@ -944,6 +954,12 @@ class FileSystemTree:
                 = _FileSystemLeaf(« Z:\woah_wouh\ESSAI_n°4 »)
             """
 
+            try:
+                p = path if isinstance(path, os.PathLike) else str(path)
+
+            except TypeError:
+                return NotImplemented
+
             if self.tree.pathlib_import:
                 # Lorsque nous nous trouvons ici, alors notre mode
                 # d'exécution est « pathlib_deeply ».
@@ -955,30 +971,24 @@ class FileSystemTree:
                 #
                 return FileSystemTree._FileSystemLeaf(
                     self.tree,
-                    self.location_object.__truediv__(path)
+                    self.location_object.__truediv__(p)
                     )
 
-            elif isinstance(path, str):
+            else:
                 # Nous sommes ici dans le mode « pathlib_ignore » et
                 # nous n'utilisons que les fonctions de OS.PATH pour
                 # émuler les méthodes de PATHLIB.
                 #
-                try:
-                    return FileSystemTree._FileSystemLeaf(
-                        self.tree,
-                        os.path.join(self.location_string, path)
-                        )
-
-                except TypeError:
-                    return NotImplemented
-
-            else:
-                return NotImplemented
+                return FileSystemTree._FileSystemLeaf(
+                    self.tree,
+                    os.path.join(self.location_string, p)
+                    )
 
 
         def __rtruediv__(
             self,
-            path: os.PathLike
+            #path: os.PathLike
+            path: object     # _FileSystemLeaf [ ou ] os.PathLike
             ) -> object:
             # -> _FileSystemLeaf [ ou ] NotImplemented
             """ Tout comme dans PATHLIB, nous utilisons l'opérateur de
@@ -991,6 +1001,12 @@ class FileSystemTree:
                 = _FileSystemLeaf(« Z:\woah_wouh\ESSAI_n°4 »)
             """
 
+            try:
+                p = path if isinstance(path, os.PathLike) else str(path)
+
+            except TypeError:
+                return NotImplemented
+
             if self.tree.pathlib_import:
                 # Lorsque nous nous trouvons ici, alors notre mode
                 # d'exécution est « pathlib_deeply ».
@@ -1002,7 +1018,7 @@ class FileSystemTree:
                 #
                 return FileSystemTree._FileSystemLeaf(
                     self.tree,
-                    self.location_object.__rtruediv__(path)
+                    self.location_object.__rtruediv__(p)
                     )
 
             elif isinstance(path, str):
@@ -1010,17 +1026,10 @@ class FileSystemTree:
                 # nous n'utilisons que les fonctions de OS.PATH pour
                 # émuler les méthodes de PATHLIB.
                 #
-                try:
-                    return FileSystemTree._FileSystemLeaf(
-                        self.tree,
-                        os.path.join(path, self.location_string)
-                        )
-
-                except TypeError:
-                    return NotImplemented
-
-            else:
-                return NotImplemented
+                return FileSystemTree._FileSystemLeaf(
+                    self.tree,
+                    os.path.join(p, self.location_string)
+                    )
 
 
         def is_dir(self) -> bool:
@@ -1118,6 +1127,40 @@ class FileSystemTree:
 
 
         @property
+        def parent(self) -> object:
+            # -> _FileSystemLeaf
+            """ Quel est notre RÉPERTOIRE parent ?
+            ( notre arborescence, sans notre nom ni, bien sûr, notre
+            extension )
+
+            ATTENTION : Tout comme le module PATHLIB, le retour de
+            cette méthode est un objet de notre classe et donc son
+            type sera _FileSystemLeaf ( voire pathlib.Path si nous
+            sommes "shuntés" ).
+            """
+
+            if self.tree.pathlib_import:
+                # Lorsque nous nous trouvons ici, alors notre mode
+                # d'exécution est « pathlib_deeply ».
+                #
+                # Ainsi, nous utilisons le module PATHLIB, mais pas
+                # directement. Un objet _FileSystemLeaf est créé afin
+                # d'accéder et / ou manipuler un noeud du système de
+                # fichiers, via les méthodes du module PATHLIB.
+                #
+                path = self.location_object.parent
+
+            else:
+                # Nous sommes ici dans le mode « pathlib_ignore » et
+                # nous n'utilisons que les fonctions de OS.PATH pour
+                # émuler les méthodes de PATHLIB.
+                #
+                path = os.path.dirname(self.location_string)
+
+            return FileSystemTree._FileSystemLeaf(self.tree, path)
+
+
+        @property
         def name(self) -> str:
             """ Quel est notre NOM ?
             ( sans mention de l'arborescence mais extension incluse
@@ -1140,8 +1183,7 @@ class FileSystemTree:
                 # nous n'utilisons que les fonctions de OS.PATH pour
                 # émuler les méthodes de PATHLIB.
                 #
-                name_without_dir = os.path.basename(self.location_string)
-                return name_without_dir
+                return os.path.basename(self.location_string)
 
 
         @property
@@ -1194,6 +1236,74 @@ class FileSystemTree:
                 #
                 _, extension = os.path.splitext(self.location_string)
                 return extension
+
+
+        def with_name(
+            self,
+            new_name: str
+            ) -> object:
+            # -> _FileSystemLeaf
+            """ Pour créer un nouvel objet, conservant le même chemin
+            mais avec un NOUVEAU NOM.
+            """
+
+            if self.tree.pathlib_import:
+                # Lorsque nous nous trouvons ici, alors notre mode
+                # d'exécution est « pathlib_deeply ».
+                #
+                # Ainsi, nous utilisons le module PATHLIB, mais pas
+                # directement. Un objet _FileSystemLeaf est créé afin
+                # d'accéder et / ou manipuler un noeud du système de
+                # fichiers, via les méthodes du module PATHLIB.
+                #
+                return FileSystemTree._FileSystemLeaf(
+                    self.tree,
+                    self.location_object.with_name(new_name)
+                    )
+
+            else:
+                # Nous sommes ici dans le mode « pathlib_ignore » et
+                # nous n'utilisons que les fonctions de OS.PATH pour
+                # émuler les méthodes de PATHLIB.
+                #
+                parent = os.path.dirname(self.location_string)
+                baby = os.path.join(parent, new_name)
+
+                return FileSystemTree._FileSystemLeaf(self.tree, baby)
+
+
+        def with_suffix(
+            self,
+            new_suffix: str
+            ) -> object:
+            # -> _FileSystemLeaf
+            """ Pour créer un nouvel objet, conservant le même chemin
+            et le même « stem » mais avec un NOUVEAU SUFFIXE.
+            """
+
+            if self.tree.pathlib_import:
+                # Lorsque nous nous trouvons ici, alors notre mode
+                # d'exécution est « pathlib_deeply ».
+                #
+                # Ainsi, nous utilisons le module PATHLIB, mais pas
+                # directement. Un objet _FileSystemLeaf est créé afin
+                # d'accéder et / ou manipuler un noeud du système de
+                # fichiers, via les méthodes du module PATHLIB.
+                #
+                return FileSystemTree._FileSystemLeaf(
+                    self.tree,
+                    self.location_object.with_suffix(new_suffix)
+                    )
+
+            else:
+                # Nous sommes ici dans le mode « pathlib_ignore » et
+                # nous n'utilisons que les fonctions de OS.PATH pour
+                # émuler les méthodes de PATHLIB.
+                #
+                base, _ = os.path.splitext(self.location_string)
+                base += new_suffix
+
+                return FileSystemTree._FileSystemLeaf(self.tree, base)
 
 
         #def resolve(self) -> _FileSystemLeaf:
@@ -2553,6 +2663,79 @@ class FileSystemTree:
             return generator
 
 
+        def touch(self):
+            """ Pour CRÉER un fichier.
+
+            ATTENTION : Contrairement à pathlib.Path.touch(), nous avons
+            choisi de ne pas autoriser l'écrasement du fichier s'il existe
+            déjà ( « exist_ok = False » ) !!!
+
+            Cf https://docs.python.org/3/library/pathlib.html#pathlib.Path.touch
+            """
+
+            if self.tree.pathlib_import:
+                # Lorsque nous nous trouvons ici, alors notre mode
+                # d'exécution est « pathlib_deeply ».
+                #
+                # Ainsi, nous utilisons le module PATHLIB, mais pas
+                # directement. Un objet _FileSystemLeaf est créé afin
+                # d'accéder et / ou manipuler un noeud du système de
+                # fichiers, via les méthodes du module PATHLIB.
+                #
+                self.location_object.touch(exist_ok = False)
+
+            else:
+                # Nous sommes ici dans le mode « pathlib_ignore » et
+                # nous n'utilisons que les fonctions de OS.PATH pour
+                # émuler les méthodes de PATHLIB.
+                #
+                if self.is_file():
+                    raise FileExistsError
+
+                else:
+                    with open(self.location_string, "wt") as fd:
+                        #fd.write('Dummy for debug')
+                        fd.write('')
+
+
+        def rename(
+            self,
+            #target: os.PathLike
+            target: object     # _FileSystemLeaf [ ou ] os.PathLike
+            ):
+            """ Pour RENOMMER un fichier.
+
+            ATTENTION : Avant Python version 3.8, pathlib.Path.rename()
+            ne renvoyait aucune valeur... donc nous faisons de même.
+
+            Cf https://docs.python.org/3/library/pathlib.html#pathlib.Path.rename
+            """
+
+            try:
+                t = target if isinstance(target, os.PathLike) else str(target)
+
+            except TypeError:
+                return NotImplemented
+
+            if self.tree.pathlib_import:
+                # Lorsque nous nous trouvons ici, alors notre mode
+                # d'exécution est « pathlib_deeply ».
+                #
+                # Ainsi, nous utilisons le module PATHLIB, mais pas
+                # directement. Un objet _FileSystemLeaf est créé afin
+                # d'accéder et / ou manipuler un noeud du système de
+                # fichiers, via les méthodes du module PATHLIB.
+                #
+                self.location_object.rename(t)
+
+            else:
+                # Nous sommes ici dans le mode « pathlib_ignore » et
+                # nous n'utilisons que les fonctions de OS.PATH pour
+                # émuler les méthodes de PATHLIB.
+                #
+                os.rename(self.location_string, t)
+
+
         def unlink(self):
             """ Pour DÉTRUIRE un fichier.
             """
@@ -2749,6 +2932,8 @@ class ScriptSkeleton:
             #
             self.debug_mode(True)
 
+        self.nb_parameters_in = self.on_se_presente(module_file, arguments)
+
         # Le dictionnaire « paths_and_miscellaneous » contiendra la liste des fichiers
         # & répertoires utiles, i-e il contiendra à minima les entrées suivantes :
         #
@@ -2763,7 +2948,8 @@ class ScriptSkeleton:
         #       - EXE_(..),
         #       - DIR_(..),
         #       - DLL_(..),
-        #       - ARG_(..).
+        #       - ARG_(..),
+        #       - NOD_(..).
         #
         # Il est aussi possible de se servir de ce dictionnaire pour conserver des
         # paramètres généraux du programme, tels que ceux par exemple lus dans une
@@ -2771,13 +2957,57 @@ class ScriptSkeleton:
         # suivantes sont ainsi aussi possibles :
         #       - shutdown_TYPE.
         #
+        # ( ! ) ATTENTION ( ! ) : Choix a été fait de stocker dans ce dictionnaire
+        # des variables telles que renvoyées par :
+        #
+        #       ScriptSkeleton.files.node()
+        #
+        # ... i.e :
+        #
+        #       des variables de type _FileSystemLeaf ou pathlib.Path
+        #
+        # ... par convention, ces variables ont pour clés :
+        #
+        #       NOD_(..)
+        #
+        # ... or un appel subséquent à :
+        #
+        #       ScriptSkeleton.file_system_mode()
+        #
+        # ... pourrait changer le type de ces variables, et donc occasionnerait
+        # des BUGS ( !!! )
+        #
+        # Nous convertissons pour autant le dictionnaire « paths_and_miscellaneous » 
+        # afin d'éviter cela. Cette conversion est réalisée directement dans notre
+        # méthode file_system_mode().
+        #
+        # Pour autant, le script qui nous utilise pourrait avoir lui-même conservé
+        # de telles variables par ailleurs, et ne pourrait-il alors planter par la
+        # suite, dans des cas à la marge ( ??? ) :
+        #
+        #       - exemple : tentative de comparaison de 2 de ces objets alors que
+        # leur type serait différent.
+        #
+        #       - exemple : tentative de concaténation de 2 paths alors que leur
+        # type serait différent.
+        #
+        # ( !!! ) PRUDENCE DONC LORSQUE L'ON CONSERVE UNE VALEUR DU TYPE :
+        #
+        #        ScriptSkeleton.file_system_mode()
+        #
+        # Cependant, à part ces cas à la marge :
+        #
+        #       _FileSystemLeaf & pathlib.Path PEUVENT COHABITER DANS 1 MÊME SCRIPT
+        #
+        # ... en effet, ces objets sont plutôt utilisés pour accéder aux noeuds
+        # du système de gestion de fichiers eux-mêmes, via leurs méthodes, et ce
+        # afin d'en obtenir des informations.
+        #
         self.shutdown_dflt = shutdown_none
 
         self.paths_and_miscellaneous = {}
 
         self.set_paths_and_miscellaneous()
-        
-        self.nb_parameters_in = self.on_se_presente(module_file, arguments)
 
 
     def __del__(self):
@@ -2947,8 +3177,8 @@ class ScriptSkeleton:
 
         for key, value in self.paths_and_miscellaneous.items():
             printer(f'{key} = {value}')
-
-        jumper()
+            printer(f'\t{type(value)}')
+            jumper()
 
 
     def check_paths_and_miscellaneous(
@@ -3002,6 +3232,15 @@ class ScriptSkeleton:
                     printer(f"Test de l'existence de {key}...")
                     node = leaf(value)
 
+                    # Nous testons différemment chaque type de noeuds du
+                    # système de fichiers afin de pouvoir adapter le msg
+                    # d'erreur potentiel.
+                    #
+                    # En effet, nous pourrions écrire plus simplement :
+                    #
+                    #   if not node.exists():
+                    #       name = 'noeud'
+                    #
                     if key_short == 'DIR_' and not node.is_dir():
                         name = 'répertoire'
 
@@ -3048,6 +3287,8 @@ class ScriptSkeleton:
         log = self.logItem
         leaf = self.files.node
 
+        os_dir = None
+        os_node = None
         l_office_exe = None
         l_writer_exe = None
         exe_txt_editor = None
@@ -3151,10 +3392,13 @@ class ScriptSkeleton:
         # On initialise le répertoire de travail de ce programme.
         #
         if directory is None or not leaf(directory).is_dir():
-            working_path = str(self.files.cwd())
+            working_node = self.files.cwd()
         else:
-            working_path = directory
+            working_node = leaf(directory)
 
+        working_path = str(working_node)
+
+        self.paths_and_miscellaneous['NOD_working'] = working_node
         self.paths_and_miscellaneous['working_PATH_FULL'] = working_path
 
         # Avant étaient utilisées les 2 instructions ci-dessous :
@@ -3173,8 +3417,9 @@ class ScriptSkeleton:
         # « working_PATH_DIRS_ONLY » n'était utilisé nulle part et car cette
         # donnée / attribut n'est pas présente dans le module PATHLIB !!!
         #
-        working_drive = leaf(working_path).drive
-        self.paths_and_miscellaneous['working_PATH_DSK_ONLY'] = working_drive
+        self.paths_and_miscellaneous[
+            'working_PATH_DSK_ONLY'
+            ] = working_node.drive
 
         # On initialise les comportements généraux de ce programme.
         #
@@ -3192,8 +3437,8 @@ class ScriptSkeleton:
         #
         if os.name.upper() == 'NT':
 
-            nt_dir = os.environ['SYSTEMROOT']
-            nt_node = leaf(nt_dir)
+            os_dir = os.environ['SYSTEMROOT']
+            os_node = leaf(os_dir)
             programs = leaf(r"C:\Program Files")
 
             # On recherche le répertoire de LibreOffice.
@@ -3284,7 +3529,7 @@ class ScriptSkeleton:
                 log.debug("~~~~~~~~~~~~~~~~~~~~~~~~~~~")
                 log.debug('Fichier retenu = %s', exe)
 
-                exe = str(nt_node / 'notepad.exe')
+                exe = str(os_node / 'notepad.exe')
 
             log.debug('')
             exe_txt_editor = exe
@@ -3312,9 +3557,9 @@ class ScriptSkeleton:
                 # de cette méthode est que le son est réglable et que
                 # cela marche sur un PC de bureau comme sur un portable...
                 #
-                player_exe = str(nt_node / 'System32' / 'mplay32.exe')
+                player_exe = str(os_node / 'System32' / 'mplay32.exe')
                 player_arg = ['/play', '/close']
-                played = str(nt_node / 'Media' / 'Windows XP Battery Low.wav')
+                played = str(os_node / 'Media' / 'Windows XP Battery Low.wav')
 
             else:
                 player_exe = None
@@ -3369,6 +3614,9 @@ class ScriptSkeleton:
         ###########################################################
         #
 
+
+        self.paths_and_miscellaneous['DIR_os'] = os_dir
+        self.paths_and_miscellaneous['NOD_os'] = os_node
 
         self.paths_and_miscellaneous['EXE_txt_editor'] = exe_txt_editor
 
@@ -3549,7 +3797,6 @@ class ScriptSkeleton:
             # journal d'exécution.
             #
             if directory is None or not self.files.node(directory).is_dir():
-
                 directory = str(self.files.cwd())
 
             file_prefix = f'#_LOG_for_{log_name}_#_'
@@ -4940,15 +5187,15 @@ class ScriptSkeleton:
         """
 
         log = self.logItem
-        tree = self.files
+        tree_old = self.files
 
         # Si l'un des paramètres a changé, on recréé l'objet qui nous
         # permet d'accéder à la gestion des répertoires et fichiers.
         #
-        if (tree.walking_mode == walking_mode) \
-            and (tree.with_pathlib == with_pathlib) \
-            and (tree.with_fnmatch == with_fnmatch) \
-            and (tree.with_glob == with_glob):
+        if (tree_old.walking_mode == walking_mode) \
+            and (tree_old.with_pathlib == with_pathlib) \
+            and (tree_old.with_fnmatch == with_fnmatch) \
+            and (tree_old.with_glob == with_glob):
             #
             # Rien n'a changé donc rien à faire !!!
             #
@@ -4960,6 +5207,11 @@ class ScriptSkeleton:
             log.debug('')
 
         else:
+            # On créé un nouvel objet de gestion des noeuds de notre
+            # système de fichiers.
+            #
+            node_type_old = type(tree_old.node())
+
             self.files = FileSystemTree(
                 walking_mode = walking_mode,
                 with_pathlib = with_pathlib,
@@ -4968,10 +5220,42 @@ class ScriptSkeleton:
                 log = log
                 )
 
+            # Si l'on a changé le type de stockage de la description
+            # des noeuds de notre système de fichier ( pathlib.Path
+            # vs _FileSystemLeaf ) alors nous convertissons dans le
+            # dictionnaire « paths_and_miscellaneous » les valeurs
+            # qui en auraient besoin !!!
+            #
+            #   Cf « ( ! ) ATTENTION ( ! ) : Choix a été fait de stocker »
+            #
+            tree_new = self.files
+            node_type_new = type(tree_new.node())
+
+            if node_type_new != node_type_old:
+
+                log.critical('')
+                log.critical("\t~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+                log.critical("\tMODIFICATION DU TYPE DES NOEUDS !!!")
+                log.critical("\t~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+                log.critical("\t... = ATTENTION AUX EFFETS DE BORDS")
+                log.critical('')
+
+                my_dict = self.paths_and_miscellaneous
+
+                for key, value in my_dict.items():
+                    if type(value) == node_type_old:
+                        log.critical("\tConversion de « %s »...", key)
+                        my_dict[key] = tree_new.node(str(value))
+
+                log.critical("\t~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+                log.critical('')
+                log.critical('')
+
 
     def search_files_from_a_mask(
         self,
-        directory: os.PathLike = None,
+        #directory: os.PathLike = None,
+        directory: object = None,
         mask: str = '*'
         ) -> list:
     	# -> list( STR ) [ ou ] list( PATHLIB.PATH )
@@ -4979,7 +5263,7 @@ class ScriptSkeleton:
         correspondent à un certain masque.
 
         :param directory: le répertoire à explorer, au format
-        STRING ou PATHLIB.PATH....
+        STRING, PATHLIB.PATH, voire _FileSystemLeaf....
 
         :param mask: le masque de recherche, qui peut contenir
         des « wildcards ». Ces wildcards sont soit ceux compris
@@ -4988,11 +5272,11 @@ class ScriptSkeleton:
         Dans ce dernier cas, les masques de recherche interprétés
         sont :
 
-            - "*" : tous les fichiers.
+            - « * » : tous les fichiers.
 
-            - "*.xxx" : les fichiers d'un certain type.
+            - « *.xxx » : les fichiers d'un certain type.
 
-            - "title*.m*" : masque plus complexe.
+            - « title*.m* » : masque plus complexe.
 
         Dans les autres cas ( i-e lorsque nous avons importé les
         modules GLOB ou FNMATCH ou PATHLIB ), cf :
@@ -5013,10 +5297,17 @@ class ScriptSkeleton:
         « with_pathlib » ) alors la liste en retour contiendra
         des valeurs de type PATHLIB.PATH, sinon les valeurs de
         la liste seront de type STRING !!!
+
+            Lorsqu'il s'agit de STRINGS, nous nous assurons que
+            les valeurs retournées soient des PATHS ABSOLUS.
+
+            Si les données retournées sont de type PATHLIB.PATH,
+            les valeurs retournées seront également de type PATH
+            ABSOLU ( obtenues via leur méthode « resolve » ).
         """
 
         log = self.logItem
-        node = self.files.node
+        leaf = self.files.node
 
         if directory is None:
 
@@ -5027,11 +5318,12 @@ class ScriptSkeleton:
             # car on sait que 'working_PATH_FULL' est toujours
             # défini à ce stade...
             #
-            directory = self.paths_and_miscellaneous[
-                'working_PATH_FULL'
-                ]
+            dir_n = self.paths_and_miscellaneous['NOD_working']
 
-        log.debug('Recherche de fichiers dans : %s.', directory)
+        else:
+            dir_n = leaf(directory)
+
+        log.debug('Recherche de fichiers dans : %s.', dir_n)
 
         # Nous imposons que le retour de notre fonction soit
         # une liste.
@@ -5168,8 +5460,8 @@ class ScriptSkeleton:
             # c'est à visée didactique.
             #
             os.path.abspath(n) if type(n) == str else n.resolve()
-                for n in node(directory).glob(mask) \
-                if node(n).is_file()
+                for n in dir_n.glob(mask) \
+                if leaf(n).is_file()
             ]
         return only_files
 
@@ -5408,7 +5700,8 @@ class ScriptSkeleton:
         """ Édition d'un ou plusieurs fichiers au format TXT.
 
         :param *args: tuple des fichiers à éditer, dont les
-        path seront du type STRING ou PATHLIB.PATH....
+        path seront du type STRING, PATHLIB.PATH, voire même
+        _FileSystemLeaf....
 
         :param wait: attend-t-on la fin de l'édition pour
         rendre la main à la fonction appelante ? ou pas...
@@ -5510,6 +5803,7 @@ class ScriptSkeleton:
         # résultat cherché...
         #
         with open(str(args[0]), flag) as file1:
+
             with open(str(args[1]), flag) as file2:
 
                 if action == 'intersection':
@@ -5543,115 +5837,132 @@ class ScriptSkeleton:
 
     def get_unused_filename(
         self,
-        filename: str,
+        #filename: str,
+        pattern: object,       # _FileSystemLeaf [ ou ] os.PathLike
+        file_ext: str = None,
         idx_size: int = 3,
         idx_start: int = 0,
         idx_force: bool = True
 	    ) -> str:
-        """ Permet de trouver un nom de fichier disponible,
-        similaire au « filename » fourni.
-        
-        ATTENTION : filename contient le nom ( « basename » )
-        du fichier + son extension ( « ext » ).
+        """ Permet de trouver un nom de fichier disponible, similaire
+        au « pattern » fourni, avec l'extension demandée.
 
-        Ainsi, si « filename » n'existe pas, nous renverrons
-        « filename » lui-même ( sauf si idx_force = True ).
+        ATTENTION : pattern contient un nom ( « basename » ) de fichier
+        AVEC OU SANS extension. L'extension cible ( « ext » ) sera, elle,
+        lue dans « file_ext ».
 
-        Sinon, nous renverrons le 1er nom de fichier disponible
-        et du type :
+        ATTENTION : si « file_ext » n'est pas fournie ( None ) alors nous
+        reprendrons l'extension de « pattern ». Par ailleurs, si nous est
+        fournie la chaîne vide ( « file_ext = '' » ) alors le fichier n'
+        aura aucune extension.
 
-            - « basename - 0###.ext » où ### est un entier.
+        Quand « basename.ext » n'existe pas, nous renvoyons ce nom ( sauf
+        si idx_force = True ).
 
-        :param filename: le modèle de nom de fichier ie le nom
-        de fichier ET SON EXTENSION.
+        Sinon, nous renvoyons le 1er nom de fichier disponible du type :
 
-        :param idx_size: le nombre minimum de caractères dont doit
-        être composé l'index ajouté ( s'il existe ). Par exemple,
-        si idx_size = 2, nous aurons possiblement à minima en sortie
-        « basename - 00.ext » ( si « filename » existe ou « idx_force
-        = True » ).
+            « basename - 0###.ext » où ### est un entier.
+
+        :param pattern: le modèle de nom ( AVEC OU SANS EXTENSION ).
+
+        :param idx_size: le nombre minimum de caractères dont doit être
+        composé l'index ajouté ( s'il existe ). Par exemple, si idx_size
+        vaut 2, nous aurons possiblement à minima en sortie =
+
+            « basename - 00.ext »
+            ( si « basename.ext » existe ou « idx_force = True » ).
 
         :param idx_start: faut-il commencer notre recherche de suffixe
         à 0, à 1, ... ? C-a-d « basename - 0.ext » conviendrait-il ?
         Ou faut-il « basename - 1.ext » à minima ? ...
 
         :param idx_force: faut-il ou pas forcément ajouter un index
-        à « filename » ? Si non, on pourra renvoyer « filename » en
-        sortie. Si oui, nous aurons à minima en sortie un nom du type
-        « basename - #.ext »
+        à « basename » ? Si non, on pourra renvoyer « basename.ext »
+        en sortie. Si oui, nous aurons à minima en sortie un nom du
+        type « basename - #.ext »
 
         :return: le nom de fichier désiré.
         """
 
-        # On regarde tout d'abord si le nom qui
-        # nous est donné n'est pas tout simplement
-        # celui que nous recherchons...
-        #
         leaf = self.files.node
-        alt_name = filename
-        filenode = leaf(filename)
-        if idx_force or filenode.exists():
 
-            # Nous sommes ici dans le cas où nous
-            # devons construire un nom de fichier
-            # alternatif ( ie le fichier existe
-            # déjà ou cela nous est demandé d'une
-            # façon impérative ).
+        # Quel que soit le type en entrée ( STRING, pathlib.Path, ... )
+        # l'appel ci-dessous construit un objet fichier.
+        #
+        node = leaf(pattern)
+        ext = node.suffix if file_ext is None else file_ext
+        alt_node = node.with_suffix(ext)
+
+        # Si le fichier existe, ou si l'on veut absolument qu'un nom
+        # de fichier avec index soit renvoyé, alors nous construisons
+        # ce nom...
+        #
+        # ( Sinon le nom qui nous a été fourni est celui recherché ! )
+        #
+        if idx_force or alt_node.exists():
+
+            # Nous sommes ici dans le cas où nous devons construire un
+            # nom de fichier alternatif ( ie le fichier existe déjà ou
+            # cela nous est demandé d'une façon impérative ).
             #
-            # RQ : Nous sommes obligés de doubler
-            # les accolades ( {{ et }} ) ci-dessous
-            # dans la définition de format_mask afin
-            # de signifier à cette F-STRING que nous
-            # voulons le caractère spécial accolade
-            # en tant que tel ( et que ce n'est pas
-            # un nom de variable qui va être inclus
-            # entre accolades à cet endroit )... La
-            # F-STRING ne va donc interpréter que la
+            # RQ : Nous sommes obligés de doubler les accolades ( {{ et
+            # }} ) ci-dessous dans la définition de format_mask afin de
+            # signifier à cette F-STRING que nous voulons le caractère
+            # spécial accolade en tant que tel ( et que ce n'est pas un
+            # nom de variable qui va être inclus entre accolades à cet
+            # endroit )... La F-STRING ne va donc interpréter que la
             # partie {idx_size}.
             #
-            ext = filenode.suffix
-            basename = filenode.stem
             format_mask = f' - {{:0{idx_size}d}}'
+
+            # Nous aurions pu écrire ci-dessous :
+            #
+            #   next = lambda x: alt_node.with_stem(base + x)
+            #
+            # mais PurePath.with_stem(stem) n'existe que depuis Python
+            # version 3.9...
+            #
+            # Cf https://docs.python.org/3/library/pathlib.html#pathlib.PurePath.with_stem
+            #
+            base = node.stem
+            next = lambda x: node.with_name(base + x).with_suffix(ext)
 
             suffix_n = idx_start
 
             while True:
 
-                # Nous construisons d'abord le suffix
-                # sous format de chaîne.
+                # Nous construisons d'abord le suffix sous format de
+                # chaîne.
                 #
-                # Puis nous ajoutons ce suffixe au nom
-                # de fichier.
+                # Puis nous ajoutons ce suffixe au nom de fichier.
                 #
-                # Nous avons séparé cette opération en
-                # 2 ( nous aurions pu utiliser .format
-                # pour tout faire en 1 seule fois ) car
-                # basename peut contenir « { » ou « } »
-                # ( ce qui ferait planter .format !!! ).
+                # Nous avons séparé cette opération en deux ( nous
+                # aurions pu utiliser .format pour tout faire en une
+                # seule fois ) car basename peut contenir « { » ou
+                # « } » ( ce qui ferait planter .format !!! ).
                 #
-                # Il aurait probablement été possible de
-                # réaliser cette concaténation en 1 fois
-                # via une F-STRING, mais c'est beaucoup
-                # moins lisible...
+                # Il aurait probablement été possible de réaliser
+                # cette concaténation en une fois via une F-STRING,
+                # mais c'est beaucoup moins lisible...
                 #
                 suffix = format_mask.format(suffix_n)
-                alt_name = basename + suffix + ext
+                alt_node = next(suffix)
 
-                if not leaf(alt_name).exists():
+                if not alt_node.exists():
                     break
 
                 suffix_n += 1
 
-        # Nous retournons le nom de fichier qui
-        # convient.
+        # Nous retournons le nom de fichier qui convient.
         #
-        return alt_name
+        return str(alt_node)
 
 
     def save_strings_to_file(
         self,
         *args,
-        destination: os.PathLike,
+        #destination: os.PathLike,
+        destination: object,       # _FileSystemLeaf [ ou ] os.PathLike
         ok_to_erase: bool = False,
         ask_confirm: bool = True,
         must_be_new: bool = False,
@@ -6770,35 +7081,57 @@ if __name__ == "__main__":
         skull.shw(f'Nom de référence = « {f_name} »')
         skull.shw('')
 
-        f_tmp = skull.get_unused_filename(
-            f_name,
-            idx_force = False
-            )
+        f_ext = '.blah-blah'
+        f_tmp = skull.get_unused_filename(f_name, f_ext, idx_force = False)
 
         skull.shw(f'Prochain nom disponible = « {f_tmp} »')
+        skull.shw(f"\t[ avec l'extension « {f_ext} » ]")
         skull.shw('')
 
         skull.shw(f'Création de « {f_tmp} »')
         skull.shw('')
 
-        with open(f_tmp, "wt") as f_test:
-            f_test.write('Dummy')
+        skull.files.node(f_tmp).touch()
 
         skull.shw(f'Prochain nom après « {f_tmp} » ...')
         skull.shw('')
 
         skull.shw(
-            '\t* sur 3 chiffres, base 0 : « {} »'.format(
-                skull.get_unused_filename(f_name)
+            '\t* sur 18 chiffres, base 33 : « {} »'.format(
+                skull.get_unused_filename(f_name, '', 18, 33)
                 )
             )
+        skull.shw(f"\t[ SANS extension ]")
         skull.shw('')
 
-        skull.shw(
-            '\t* sur 18 chiffres, base 33 : « {} »'.format(
-                skull.get_unused_filename(f_name, 18, 33)
-                )
-            )
+        f_tmp = skull.get_unused_filename(f_name)
+
+        skull.shw(f'\t* sur 3 chiffres, base 0 : « {f_tmp} »')
+        skull.shw(f"\t[ avec l'extension par DÉFAUT ]")
+        skull.shw('')
+
+        skull.shw(f'Création de « {f_tmp} »')
+        skull.shw('')
+
+        skull.files.node(f_tmp).touch()
+
+        skull.shw(f'Re-Création de « {f_tmp} »')
+        skull.shw('')
+
+        try:
+            skull.files.node(f_tmp).touch()
+
+        except FileExistsError:
+            skull.shw(f'\tINTERDITE CAR CE FICHIER EXISTE !!!')
+            skull.shw('')
+
+        skull.shw(f'Prochain nom après « {f_tmp} » ...')
+        skull.shw('')
+
+        f_tmp = skull.get_unused_filename(f_name)
+
+        skull.shw(f'\t* sur 3 chiffres, base 0 : « {f_tmp} »')
+        skull.shw(f"\t[ avec l'extension par DÉFAUT ]")
         skull.shw('')
 
 
@@ -6878,8 +7211,7 @@ if __name__ == "__main__":
 
         # On affecte des valeurs permettant le test.
         #
-        working_path = skull.paths_and_miscellaneous['working_PATH_FULL']
-        working_node = leaf(working_path)
+        working_node = skull.paths_and_miscellaneous['NOD_working']
 
         player_exe = str(working_node / 'mplay32.exe')
         player_arg = ['/play', '/close']

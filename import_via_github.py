@@ -24,7 +24,10 @@ if __name__ == "__main__":
         )
 
     _my_log = _my_skeleton.logItem
-    default_src = os.path.basename(__file__)
+    _leaf = _my_skeleton.files.node
+
+    #default_src = os.path.basename(__file__)
+    default_src = _leaf(__file__).name
 
     # On recherche les fichiers à importer qui seraient
     # indiqués dans notre ligne de commande...
@@ -65,16 +68,14 @@ if __name__ == "__main__":
             file_src = default_src
 
 
-        prompt = \
-            'Fichier à télécharger = « ' \
-            + file_src \
-            + ' ». OK ?'
+        prompt = 'Fichier à télécharger = « ' + file_src + ' ». OK ?'
 
         if _my_skeleton.ask_yes_or_no(prompt, 'o'):
 
             url_src = url_base + file_src
 
-            _, ext = os.path.splitext(file_src)
+            #_, ext = os.path.splitext(file_src)
+            ext = _leaf(file_src).suffix
 
             if ext in skeleton.filetype_to_coding.keys():
 
@@ -102,8 +103,10 @@ if __name__ == "__main__":
                 # ( ce n'est pas ergonomique puisque
                 # je n'ai pas de clavier ).
                 #
-                erase_file = os.name == 'posix' \
+                erase_file = (
+                        os.name == 'posix'
                     and 'm360173' in os.uname().nodename
+                    )
 
                 _my_skeleton.save_strings_to_file(
                     content,
