@@ -42,4 +42,10 @@ rename_to_cmd "skeleton.sh" "@s"
 
 rename_to_file "my%20Check-Lists.py" "my Check-Lists.py"
 
+
+#
+# ATTENTION : Cette ligne doit être la dernière puisque elle ECRASE le script que nous
+# sommes en train d'exécuter, ce qui va causer ( très probablement ) sa fin, ou à minima
+# le système va y perdre ses petits... !!!
+#
 rename_to_cmd "admin.sh" "@a"
