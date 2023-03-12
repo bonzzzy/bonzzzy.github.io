@@ -22,6 +22,14 @@ rename_to_cmd() {
 
 
 #
+# Nettoyage des LOG et des fichiers temporaires de TESTS
+#
+rm -f #_LOG_*
+
+rm -f #_TESTS_*
+
+
+#
 # On renomme nos fichiers avec des noms courts car la saisie sous iPad c'est CHIANT !!!
 #
 rename_to_cmd "import_via_github.sh" "@i"
@@ -34,12 +42,4 @@ rename_to_cmd "skeleton.sh" "@s"
 
 rename_to_file "my%20Check-Lists.py" "my Check-Lists.py"
 
-rename_to_cmd "admin.sh" "admin"
-
-
-#
-# Nettoyage des LOG et des fichiers temporaires de TESTS
-#
-rm -f #_LOG_*
-
-rm -f #_TESTS_*
+rename_to_cmd "admin.sh" "@a"
