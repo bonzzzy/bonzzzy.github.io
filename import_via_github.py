@@ -85,7 +85,7 @@ if __name__ == "__main__":
 
                 set_of_chars = skeleton.coding_unknown
 
-            content, charset = _my_skeleton.send_request_http(
+            content, _, charset = _my_skeleton.send_request_http(
                 url_src,
                 set_of_chars
                 )
@@ -113,7 +113,7 @@ if __name__ == "__main__":
                     destination = file_src,
                     ok_to_erase = erase_file,
                     ask_confirm = False,
-                    coding = charset
+                    data_fmt = charset
                     )
 
                 print('===>> File saved')

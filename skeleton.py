@@ -21,6 +21,8 @@ ___debug___ = __debug__
 import os
 import sys
 
+import json
+
 import time
 import datetime
 
@@ -32,11 +34,20 @@ import subprocess
 import logging
 import logging.handlers
 
+import socket
+import http.client
+import http.server
 import urllib.request
+import urllib.error
 
-from urllib.error import HTTPError, URLError
-from http.client import InvalidURL, NotConnected
-from socket import timeout
+
+if ___debug___:
+
+    # L'utilisation de traceback.print_exc(), traceback.format_exc(), ... est
+    # généralement utile pour le débogage et le développement, mais ne devrait
+    # pas être utilisée dans du code de production pour des raisons de sécurité.
+    #
+    import traceback
 
 
 # Les modules suivants ne sont pas importés par défaut, ils ne le seront que
@@ -136,7 +147,7 @@ walking_via_scandir = 'os.scandir'
 #
 #   - Fonctions spécifiques au TEMPS :
 #
-#                       . def build_now_string
+#   ( in autotests )    . def build_now_string
 #
 # ===========================================================================
 #
@@ -157,14 +168,14 @@ walking_via_scandir = 'os.scandir'
 #   ( in autotests )    . def edit_file_txt
 #   ( in autotests )    . def compare_files
 #   ( in autotests )    . def get_unused_filename
-#                       . def save_strings_to_file
+#   ( in autotests )    . def save_strings_to_file
 #
 # ===========================================================================
 #
 #   - Fonctions spécifiques au WEB ( browser, HTML, HTTP, etc ) :
 #
 #                       . def url_to_valid
-#                       . def send_request_http
+#   ( in autotests )    . def send_request_http
 #
 # ===========================================================================
 
@@ -215,22 +226,8 @@ yes_or_no = {
 # Le dictionnaire ci-dessous permet d'associer le type
 # de fichier avec le jeu de charactères qu'il contient.
 #
-# CONVENTION : Lorsque le fichier est codé sous forme
-# de « bytes » ( codage sous forme octale ), on code
-# ceci par « None ».
-#
-# ATTENTION : Ce script s'attend à ce que « None »
-# soit la valeur de l'encodage en « byte strings ».
-#
-#       Des tests type « if ... is None » sont ainsi
-#       codés dans ce script !!!
-#
-#       La valeur « coding_bytes » ci-dessous ne doit
-#       donc pas être modifiée & est donnée simplement
-#       ci-dessous pour mémoire !!!
-#
-# ATTENTION : Il serait possible de mettre « None »
-# pour toutes les valeurs puisque :
+# ATTENTION : Il est possible d'affecter « coding_bytes »
+# à toutes les valeurs puisque :
 #
 #       . urllib.request.urlopen("...").read() renvoie
 # une chaîne de caractères au format « bytes ».
@@ -268,9 +265,9 @@ yes_or_no = {
 #       . « Bash stores strings as byte strings ».
 # Cf https://unix.stackexchange.com/questions/250366/how-to-force-shell-script-characters-encoding-from-within-the-script
 #
-coding_unknown = '?'
+coding_bytes = 'bytes'      # Codage sous forme octale
 coding_default = 'UTF-8'
-coding_bytes = None
+coding_unknown = '?'
 
 filetype_to_coding = {
     '.bat': 'ASCII',
@@ -4784,7 +4781,7 @@ class ScriptSkeleton:
         #
         while True:
 
-            answer = input(prompt)
+            answer = input(prompt).lower()
             print()
 
             if answer.strip(whitespace) == '':
@@ -5967,7 +5964,8 @@ class ScriptSkeleton:
         ask_confirm: bool = True,
         must_be_new: bool = False,
         new_suffix: str = ' { new version }',
-        coding: str = coding_default,
+        data_type: str = None,
+        data_fmt: str = coding_default,
         ) -> str:
         """ Pour sauvegarder une ou des chaînes de
         caractères dans un fichier.
@@ -5995,15 +5993,14 @@ class ScriptSkeleton:
         au nom de fichier qui nous a été fourni, si l'on
         doit bâtir un nouveau nom.
 
-        :param coding: quel est le jeu de caractères
+        :param data_type: quel est le type du contenu
+        que nous devons sauvegarder dans le fichier ?
+        ( HTML, JSON, ... ou None )
+
+        :param data_fmt: quel est le jeu de caractères
         du fichier à créer ? Cela nous permet surtout
         de savoir s'il faut créer un fichier « byte »
         ou un fichier texte...
-
-            !!! ATTENTION !!!
-            D'après la CONVENTION adoptée dans ce script,
-            None ou coding_bytes indique un encodage en
-            « byte strings ».
 
         :return: le nom du fichier créé (au cas où nous
         ayions dû bâtir un nouveau nom...).
@@ -6045,33 +6042,124 @@ class ScriptSkeleton:
             #
             file_dst = str(destination)
 
-        if coding is None:
+        if (data_fmt is None) or (data_fmt == coding_bytes):
 
             # Le jeu de caractères qui nous concerne est
             # celui des « byte strings ». Donc on ouvre
             # notre fichier au format « b(yte) ».
             #
-            flag = "wb"
+            f_actual = 'BYTES'
+            f_other = 'TEXTE'
+            f_flag = 'wb'
 
         else:
 
             # On ouvre notre fichier au format « t(ext) ».
             #
-            flag = "wt"
+            f_actual = 'TEXTE'
+            f_other = 'BYTES'
+            f_flag = 'wt'
 
-        log.debug('Coding en entrée = « %s »', coding)
-        log.debug('Format en sortie = « %s »', flag)
+        log.debug('Format en entrée = « %s »', data_fmt)
+        log.debug('Format en sortie = « %s »', f_flag)
         log.debug('')
 
         self.shw(f'Destination = {file_dst}')
-        self.shw_debug(f'Format = « {flag} »')
+        self.shw_debug(f'Format = « {f_flag} »')
         self.shw('')
 
-        with open(file_dst, flag) as new_file:
+        with open(file_dst, f_flag) as new_file:
 
             for content in args:
 
-                new_file.write(content)
+                if f_flag == 'wt' \
+                    and data_type is not None \
+                    and 'json' in data_type.lower():
+
+                    log.debug("Fichier destination format TEXTE")
+                    log.debug("+ Contenu à écrire format JSON")
+                    log.debug("= Nous utilisons le module JSON.")
+                    log.debug('')
+
+                    # Nous utilisons le module JSON si le contenu à écrire est
+                    # de type JSON ( en espérant que le traitement soit ainsi
+                    # accéléré ).
+                    #
+                    # Par contre, ce module JSON ne sait traiter que des datas
+                    # au format TXT...
+                    #
+                    # Cf https://docs.python.org/fr/3/library/json.html#basic-usage :
+                    #
+                    #   json.dump(obj, fp, [..]
+                    #   Le module json produit toujours des objets str, et non
+                    #   des objets bytes. fp.write() doit ainsi prendre en charge
+                    #   un objet str en entrée.
+                    #
+                    json.dump(content, new_file)
+
+                else: 
+                    try:
+                        new_file.write(content)
+
+                    except UnicodeEncodeError as erreur:
+                        # Exception qui se rencontre par exemple si l'on essaye
+                        # d'écrire dans un fichier TXT ( « wt » ) le caractère
+                        # '\U0001f496' ( ou SPARKLING HEART c-a-d ❤️ ) qui est,
+                        # pourtant, Unicode !!!
+                        #
+                        # Il suffit d'exécuter sous IDLE le code suivant pour
+                        # s'en rendre compte :
+                        #
+                        #        with open('tmp.txt', 'wt') as f:
+                        #            c = '❤'     # ou « c = '\U0001f496' »
+                        #            try:
+                        #                f.write(c)
+                        #            except UnicodeEncodeError:
+                        #                print('Caractère NON UNICODE rencontré.')
+                        #            else:
+                        #                print('Tout va bien.')
+                        #            finally:
+                        #                print('FIN !!!')
+                        #
+                        # Cf aussi les remarques concernant :
+                        #
+                        #       'https://jsonplaceholder.typicode.com/'
+                        #
+                        # ... dans nos « AUTOTESTS de REQUÊTES HTTP ».
+                        #
+                        self.shw("\t\t~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+                        self.shw("\t\tATTENTION = ERREUR À L'ENREGISTREMENT")
+                        self.shw("\t\t~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+                        self.shw('')
+                        self.shw(f"\t« {erreur} »")
+                        self.shw('')
+                        self.shw("\tCaractère NON UNICODE rencontré à l'enregistrement.")
+                        self.shw("\tUne partie du contenu sera ignorée, non sauvegardée.")
+                        self.shw('')
+
+                        log.debug("\tNous ne prenons pas le risque de logger ce contenu")
+                        log.debug("\t... qui pourrait faire planter le module de LOG !!!")
+                        log.debug('')
+
+                        if ___debug___:
+                            # Nous allons sauvegarder la pile d'exécution.
+                            #
+                            # Pour cela, nous la découpons en lignes afin
+                            # d'en améliorer la présentation.
+                            #
+                            traceback_string = traceback.format_exc()
+                            trace_lines = traceback_string.rstrip(whitespace).split('\n')
+
+                            log.debug("\tNous journalisons toutefois la trace d'exécution :")
+                            log.debug('')
+                            for line in trace_lines:
+                                if line != '':
+                                    log.debug("\t\t%s", line)
+                            log.debug('')
+
+                        self.shw(f"\tCodage actuel pour écriture dans le fichier = « {f_actual} ».")
+                        self.shw(f"\tNe faudrait-il pas plutôt utiliser le format « {f_other} » ?")
+                        self.shw('')
 
         return file_dst
 
@@ -6085,18 +6173,113 @@ class ScriptSkeleton:
 # ---------------------------------------------------------------------------
 
 
+    # Caractères interdits dans les URL, ainsi que leur transcription.
+    #
+    # Pour une liste des caractères qui devraient être présents dans
+    # ce dictionnaire, cf :
+    #
+    #   https://en.wikipedia.org/wiki/URL_encoding
+    #
+    _url_forbiddens = {
+        ' ': '%20',
+        #
+        # Sous Firefox, lorsque l'on écrit une URL avec un « ! », ce dernier n'est
+        # pas transformé par le browser. Ainsi :
+        #
+        #   https://www.google.com/search?q=( ! )
+        #
+        # ... devient :
+        #
+        #   https://www.google.com/search?q=(%20!%20)
+        #
+        # ... donc nous ne transformons pas non plus « ! ».
+        #
+        # ATTENTION : Après l'avoir saisie, lorsque l'on observe la première URL ci-
+        # dessus dans la barre d'adresses de Firefox, on lit « ( ! ) » mais si l'on
+        # copy / paste cette URL du browser vers un éditeur de texte, apparaît alors
+        # « (%20!%20) ». L'URL a donc bien été modifiée.
+        #
+#       '!': '%21',
+        '"': '%22',
+        #
+        # Le caractère suivant « # » permet de donner des indications dans certaines
+        # URL : il ne faut donc pas le traduire !!! Ainsi, cf :
+        #
+        #   https://mybox.airfrance.fr/MyBoxWeb/accueil.do#toRead
+        #
+#       '#': '%23',
+        '$': '%24',
+        #
+        # Le caractère « % » permet de coder les caractères spéciaux dans les URL :
+        # il ne faut donc pas le traduire !!! Ainsi, cf :
+        #
+        #   https://fr.search.yahoo.com/search?p=dei%20cas
+        #
+#       '%': '%25',
+        #
+        # Le caractère suivant « & » est parfois utilisé dans les URL pour, par
+        # exemple, indiquer une recherche :
+        #
+        #   https://www.google.com/search?client=firefox-b-d&q=test
+        #
+#       '&': '%26',
+        "'": '%27',
+        #
+        # Pour « ( » et « ) », cf les remarques ci-dessus relatives à « ! ».
+        #
+#       '(': '%28',
+#       ')': '%29',
+        '*': '%2A',
+        '+': '%2B',
+        ',': '%2C',
+        #
+        # Certains caractères sont parties intégrantes d'une adresse web... !!!
+        # Donc mieux vaut ne pas les traiter, sinon l'URL sera incompréhensible
+        # lors de sa lecture. C'est le cas de « / » et « : » i.e « https:// ».
+        #
+#       '/': '%2F',
+#       ':': '%3A',
+        ';': '%3B',
+        #
+        # Tout comme « & » ci-dessus, les caractères suivants « = » et « ? » font
+        # partie du langage parfois utilisé dans les URL pour une recherche.
+        #
+#       '=': '%3D',
+#       '?': '%3F',
+        '@': '%40',
+        '[': '%5B',
+        ']': '%5D',
+        #
+        # Le caractère « \ » peut être utilisé dans des requêtes, cf :
+        #
+        #   https://www.google.com/search?q=\U0001f496
+        #   https://www.google.com/search?q=%5CU0001f496
+        #   = Emoji Unicode Character 'SPARKLING HEART' (U+1F496)
+        #
+        # ... donc nous l'avons ajouté au dictionnaire alors qu'il ne se trouve
+        # pas dans la table « Reserved characters after percent-encoding » de :
+        #
+        #   https://en.wikipedia.org/wiki/URL_encoding
+        #
+        # Il se trouve par contre dans la table :
+        #
+        #   « Common characters after percent-encoding (ASCII or UTF-8 based)  »
+        #
+        # ... de cette même page.
+        #
+        '\\': '%5C',        
+    }
+
+
     def url_to_valid(
         self,
         url: str
         ) -> str:
-        """ S'assure qu'une URL soit valide, i.e
-        ne comporte pas de caractères interdits,
-        et renvoie si nécessaire l'URL adéquate,
-        ou l'URL inchangée si elle était déjà
-        valide.
+        """ S'assure qu'une URL soit valide, i.e ne comporte pas de caractères
+        interdits, et renvoie si nécessaire l'URL adéquate, ou l'URL inchangée
+        si elle était déjà valide.
 
-        Cf par exemple le message d'erreur suivant
-        si l'URL contient un espace :
+        Cf par exemple le message d'erreur suivant si l'URL contient 1 espace :
 
             InvalidURL = URL can't contain control characters. '/my Check-Lists.py' (found at least ' ')
 
@@ -6105,12 +6288,11 @@ class ScriptSkeleton:
 
         valid_url = url
 
-        if ' ' in url:
+        for key, value in self._url_forbiddens.items():
 
-            valid_url = valid_url.replace(
-                ' ',
-                '%20'
-                )
+            if key in url:
+
+                valid_url = valid_url.replace(key, value)
 
         return valid_url
 
@@ -6119,26 +6301,36 @@ class ScriptSkeleton:
         self,
         url: str,
         coding: str = coding_unknown
-        ) -> (str, str):
+        ) -> (str, str, str):
         """ Pour envoyer une requête HTTP et en recevoir le résultat.
 
         :param url: la requête à lancer.
 
         :param coding: l'encodage attendu de la réponse.
 
-        :return: la réponse + le format de cette réponse.
-        Ce format correspondra au format souhaité, sauf si nous avons
+        :return: la réponse + son type de contenu + son format.
+        Le format correspondra au format souhaité, sauf si nous avons
         eu à le modifier. Ce qui sera par exemple le cas si celui qui
         nous a été transmis était « coding_unknown ».
         """
 
         log = self.logItem
         url_string = ''
+        url_content = None
 
         url_valid = self.url_to_valid(url)
-        self.shw(f'URL get = {url}')
-        self.shw(f'URL ok  = {url_valid}')
-        self.shw('')
+        self.shw(f'URL get  = {url}')
+        self.shw(f'URL ok   = {url_valid}')
+
+        # Nous encapsulons l'URL dans la structure urllib.request.Request
+        # du module, au cas où nous souhaitions plus tard utiliser cette
+        # classe afin de transmettre des paramètres à l'URL contactée...
+        #
+        # Si nous voulions ne pas utiliser cette structure et rester simple
+        # dans nos syntaxes, il suffirait alors de directement passer à l'
+        # appel urllib.request.urlopen() ci-dessous l'adresse url_valid.
+        #
+        request = urllib.request.Request(url=url_valid)
 
         try:
 
@@ -6149,40 +6341,160 @@ class ScriptSkeleton:
             # receive a response with urlopen(). Then you read the body
             # of the response and close the response object. »
             #
-            with urllib.request.urlopen(url_valid, timeout=3) as data:
+            #with urllib.request.urlopen(url_valid, timeout=3) as data:
+            with urllib.request.urlopen(request, timeout=3) as data:
 
                 url_bytes = data.read()
-                url_coding = data.headers.get_content_charset()
 
-        except InvalidURL as error:
-            self.shw(f'===>> InvalidURL = {error}')
-            self.shw('')
+                # data.url = URL of the resource retrieved, commonly used
+                # to determine if a redirect was followed.
+                #
+                url_address = data.url
 
-        except NotConnected as error:
-            self.shw(f'===>> NotConnected = {error}')
-            self.shw('')
+                # status = Status code returned by server.
+                # ( New in version 3.9 )
+                #
+                # code = Deprecated in favor of status.
+                # ( Deprecated since version 3.9 )
+                #
+                # getstatus() = Deprecated in favor of status.
+                # ( Deprecated since version 3.9 )
+                #
+                # Cf https://docs.python.org/3.9/library/urllib.request.html#module-urllib.response
+                #
+                if hasattr(data, 'status'):
+                    url_status = data.status
+                elif hasattr(data, 'code'):
+                    url_status = data.code
+                else:
+                    url_status = data.getstatus()
+
+                # Returns the headers of the response in the form of an
+                # EmailMessage instance.
+                #
+                # Cf https://docs.python.org/3/library/email.message.html#email.message.EmailMessage
+                #
+                url_header = data.headers
+
+                # headers.get_content_charset() sait lire les fichiers au
+                # format HTML.
+                #
+                # Le "character encoding" n'est normalement pas spécifié
+                # dans le fichier .py, pas en tout cas à la façon d'un
+                # fichier HTML normal !!!
+                #
+                # Donc get_content_charset() ne devrait pas le lire de
+                # façon correcte si c'est un fichier script Python, bash
+                # ou autres.
+                #
+                # Dans le cas où get_content_charset() ne peut donner de
+                # réponse, il renverra « None ».
+                #
+                url_charset = url_header.get_content_charset()
+                url_content = url_header.get_content_type()
 
         except TimeoutError:
-            self.shw('===>> Request timed out...')
+            self.shw('')
+            self.shw('===>> Request timed out at the SYSTEM level...')
             self.shw('')
 
-        except HTTPError as error:
-            self.shw(
-                f'===>> HTTP {error.status} ERROR = {error.reason}'
-                )
+        except http.client.InvalidURL as error:
+            self.shw('')
+            self.shw(f'===>> InvalidURL ( http.client ) = {error}')
             self.shw('')
 
-        except URLError as error:
+        except http.client.NotConnected as error:
+            self.shw('')
+            self.shw(f'===>> NotConnected ( http.client ) = {error}')
+            self.shw('')
 
-            if isinstance(error.reason, timeout):
+        # The except HTTPError must come first, otherwise except URLError
+        # will also catch an HTTPError.
+        #
+        # Cf https://docs.python.org/3/howto/urllib2.html#wrapping-it-up
+        #
+        # Though being an exception (a subclass of URLError), an HTTPError
+        # [..]
+        #
+        # Cf https://docs.python.org/3/library/urllib.error.html#urllib.error.HTTPError
+        #
+        # FINALEMENT : le traitement des erreurs HTTPError a été reporté
+        # dans celui des erreurs URLError ( puisque HTTPError est une ss-
+        # classe de URLError ). C'est plus propre.
+        #
+        # Cf https://docs.python.org/3/howto/urllib2.html#wrapping-it-up
+        # Cf https://docs.python.org/3/howto/urllib2.html#number-2
+        #
+        #except urllib.error.HTTPError as error:
+        #    self.shw('')
+        #    self.shw(
+        #        f'===>> HTTP {error.status} ERROR = {error.reason}'
+        #        )
+        #    self.shw('')
+        #
+        except urllib.error.URLError as error:
+            self.shw('')
+
+            # On gère ici aussi bien les HTTPError que les URLError.
+            #
+            # Cf https://docs.python.org/3/library/urllib.error.html#urllib.error.URLError
+            # Cf https://docs.python.org/3/library/urllib.error.html#urllib.error.HTTPError
+            # Cf https://docs.python.org/3/howto/urllib2.html#wrapping-it-up
+            # Cf https://docs.python.org/3/howto/urllib2.html#error-codes
+            # Cf https://docs.python.org/3/library/http.server.html#http.server.BaseHTTPRequestHandler.responses
+            #
+            if isinstance(error.reason, socket.timeout):
                 self.shw('===>> Socket timeout error...')
+
+            elif hasattr(error, 'code'):
+                self.shw(
+                    f'===>> HTTP {error.code} ERROR = {error.reason}'
+                    )
+                self.shw("The server couldn't fulfill the request.")
+
+                # On inscrit dans le LOG le maximum d'informations
+                # concernant cette erreur...
+                #
+                if error.code in http.server.BaseHTTPRequestHandler.responses:
+
+                    msgs = http.server.BaseHTTPRequestHandler.responses[
+                        error.code
+                        ]
+
+                    log.debug(f'Short reason = {msgs[0]}')
+                    log.debug(f'Full reason = {msgs[1]}')
 
             else:
                 self.shw(f'===>> URLError = {error.reason}')
+                self.shw("We failed to reach a server.")
+
+            self.shw('')
+            log.debug(f'Error TYPE = {type(error)}')
+            log.debug(f'Reason TYPE = {type(error.reason)}')
+            log.debug('')
+
+        else:
+            # EVERYTHING IS FINE : la requête a donné un résultat.
+
+            # On informe si l'URL originale a été redirigée vers
+            # une autre adresse.
+            #
+            # ATTENTION : Ce test ne détecte pas si le préfix http
+            # change !! Ainsi, la requête 'http://www.google.com/'
+            # est toujours remplacée par 'https://www.google.com'
+            # mais le test « url_address != url_valid » ne saura
+            # voir que le préfixe HTTP est devenu HTTPS.
+            #
+            if url_address != url_valid:
+                self.shw(f'URL real = {url_address}')
+                self.shw( '[ i.e a redirect was followed... ]')
 
             self.shw('')
 
-        else:
+            log.debug(f'Status code returned by server = {url_status}')
+            log.debug(f'Content type returned by server = {url_content}')
+            log.debug(f'Content charset returned by server = {url_charset}')
+            log.debug('')
 
             log.debug('Début de « url_bytes » :')
             log.debug(url_bytes[0:99])
@@ -6191,27 +6503,12 @@ class ScriptSkeleton:
             self.shw(f'Coding en entrée = « {coding} »')
 
             if coding == coding_unknown:
-
-                # headers.get_content_charset() sait lire les
-                # fichiers au format HTML.
-                #
-                # Le "character encoding" n'est normalement pas
-                # spécifié dans le fichier .py, pas en tout cas
-                # à la façon d'un fichier HTML normal !!!
-                #
-                # Donc get_content_charset() ne devrait pas le
-                # lire correctement si c'est un fichier script
-                # Python, bash ou autres.
-                #
-                # Dans le cas où get_content_charset() ne peut
-                # donner de réponse, il renverra « None ».
-                #
-                coding = url_coding
+                coding = url_charset
 
             self.shw(f'Coding calculé = « {coding} »')
             self.shw('')
 
-            if coding is None:
+            if (coding is None) or (coding == coding_bytes):
 
                 # Aucun décodage à faire car le jeu de caractères
                 # qui nous concerne est celui des « byte strings ».
@@ -6225,7 +6522,7 @@ class ScriptSkeleton:
             log.debug(url_string[0:99])
             log.debug('')
 
-        return (url_string, coding)
+        return (url_string, url_content, coding)
 
 
 # ---------------------------------------------------------------------------
@@ -7133,6 +7430,208 @@ if __name__ == "__main__":
         skull.shw(f'\t* sur 3 chiffres, base 0 : « {f_tmp} »')
         skull.shw(f"\t[ avec l'extension par DÉFAUT ]")
         skull.shw('')
+
+
+    # #######################################################################
+    # -----------------------------------------------------------------------
+    # #######################################################################
+    # -----------------------------------------------------------------------
+    # #######################################################################
+    #
+    user_answer = skull.ask_yes_or_no(
+        "Voulez-vous que je réalise mes AUTOTESTS de REQUÊTES HTTP ?",
+        'non'
+        )
+
+    if user_answer:
+
+        # On appelle les fonctions convert_to_pdf_*() pour
+        # vérifier que Python ne plante pas en leur sein.
+        #
+        log.info('')
+        log.info('\t=============================')
+        log.info('\t>>> TEST de REQUÊTES HTTP <<<')
+        log.info('\t=============================')
+        log.info('')
+        log.info('')
+
+        url_dict = {
+            'git_bnz'   : 'https://bonzzzy.github.io/',
+            # Notre GitHub...
+            # ( HTML lisible = Contenu ULTRA-simple + TXT seul )
+            #
+            'exple'     : 'https://www.example.com/',
+            # Example Domain = This domain is for use in illustrative
+            # examples in documents.
+            # ( HTML lisible = Contenu simple + TXT seul )
+            #
+            'iana'      : 'https://www.iana.org/domains/reserved',
+            # Internet Assigned Numbers Authority (IANA)
+            # = HTML OFFICIEL tel qu'il est NORMALISÉ !!!
+            # ( HTML lisible = Contenu COMPLEXE + TXT multi-alphabet )
+            #
+            'tst_fr'    : 'http://www.tst.fr/m" ! "',
+            # URL qui va être transformée
+            # ... via notre méthode url_to_valid() :
+            #
+            #   http://www.tst.fr/m%22%20!%20%22
+            #
+            # ... et l'URL existe ( redirection ) :
+            #
+            #   https://tst.fr/m%22%20!%20%22
+            #
+            # ... pour être elle-même redirigée vers :
+            #
+            #   https://tst.fr/nos-metiers/manchette/
+            #
+            # = HTML probablement GÉNÉRÉ par un OUTIL.
+            # ( HTML à peu près lisible = Contenu COMPLEXE + IMG aussi )
+            #
+            'json_do_1' : 'https://jsonplaceholder.typicode.com/todos/1',
+            # Contenu JSON ultra-simple, i.e 1 seul enregistrement...
+            # {"userId": 1, "id": 1, "title": "delectus aut autem", "completed": false}'
+            #
+            'json_do_a' : 'https://jsonplaceholder.typicode.com/todos/',
+            # Contenu JSON toujours simple, mais avec 200 enregistrements.
+            #
+            'pb_aslash' : 'https://fr.search.yahoo.com/search?p=\\U0001f496',
+            # Le caractère antislash « \ » peut être utilisé dans certaines
+            # requêtes. On vérifie ici que notre script l'accepte bien et le
+            # traite via une conversion :
+            #
+            #    https://fr.search.yahoo.com/search?p=\U0001f496
+            # -> https://fr.search.yahoo.com/search?p=%5CU0001f496
+            #
+            'pb_dummy'  : 'http://www.dummy.tmp/',
+            # Fausse adresse = URLError 11001
+            #
+            'pb_uni'    : 'https://jsonplaceholder.typicode.com/',
+            # Cette page HTML indique en entête, comme beaucoup :
+            #
+            #   « meta charset="UTF-8" »
+            #
+            # Pour autant, dans son corps, se retrouve le caractère « ❤️ »
+            # ( '\U0001f496' ) qui n'est pas inclus dans la table UTF-8 de
+            # Python ( alors qu'il devrait ? ).
+            #
+            #   https://www.google.com/search?q=\U0001f496
+            #   https://www.google.com/search?q=%5CU0001f496
+            #   = Emoji Unicode Character 'SPARKLING HEART' (U+1F496)
+            #
+            # La présence de ce caractère faisait alors planter l'exécution
+            # lorsque, dans ce script, on essayait d'écrire dans un fichier
+            # en mode TEXTE ( ouvert via « wt » ) le résultat de la requête
+            # GET pour cette page, via les appels successifs aux méthodes :
+            #
+            # result = skeleton.send_request_http('jsonplaceholder.typicode.com')
+            # [ puis ] skeleton.save_strings_to_file(result).
+            #
+            # Le message d'erreur était :
+            #
+            #   UnicodeEncodeError: 'charmap' codec can't encode character '\U0001f496' in position 2185: character maps to <undefined>
+            #
+            # Cf la partie :
+            #
+            #   « except UnicodeEncodeError: »
+            #
+            # ... dans notre méthode « save_strings_to_file() ».
+            #
+            # D'où le fait que, dorénavant, lors de nos tests ci-dessous,
+            # nous imposons le format « coding_bytes » comme format pour
+            # l'expression du résultat de la requête, puis, par la suite,
+            # comme format pour l'écriture dans le fichier. Aucun encodage
+            # / décodage n'est alors réalisé :
+            #
+            #       . urllib.request.urlopen("...").read() renvoie une
+            # chaîne de caractères au format « bytes »,
+            #
+            #       . en mode "wb", écrire dans un fichier demande une
+            # chaîne au format b"...", ie au format « bytes ».
+            #
+            # Pas besoin donc de passer par la table UTF-8 de Python,
+            # table qui semble incomplète.
+            #
+            'g_403'     : 'https://www.google.com/search?q=test',
+            # Adresse interdite via Python = HTTP 403 ERROR
+            # ... pour éviter les attaques par surcharge ??
+            # ... car cette requête marche sous Firefox !!!
+            #
+            'g_403_fox' : 'https://www.google.com/search?client=firefox-b-d&q=test',
+            # Tout comme la précédente, cette requête n'est pas acceptée
+            # bien qu'un CLIENT FIREFOX soit indiqué = HTTP 403 ERROR !!!
+            #
+            'g_404'     : 'https://www.google.com/search-q-test',
+            # Adresse inconnue = HTTP 404 ERROR
+            #
+            'g_www'     : 'http://www.google.com/',
+            # Google.com
+            # ... page bien plus complexe que son simple affichage ne le
+            # laisse penser.
+            # ... Elle se redirige vers https://www.google.com mais notre
+            # méthode send_request_http() ne le détecte pas ( la méthode
+            # ne fait pas la différence entre HTTP et HTTPS ).
+            # ( HTML TOTALEMENT ILLISIBLE )
+            #
+            'AF_saml'   : 'https://intralignes.airfrance.fr/',
+            # Air France = Authentification SAML 2.
+            # ( HTML ILLISIBLE = SAMLRequest codée en Base64 )
+            # > Cf https://www.dcode.fr/code-base-64 pour décodage.
+            #
+        }
+
+        model = f'{it_begins_with}_HTML_answer_for_.html'
+        out_files = list()
+
+        # Suivant la façon choisie de parcourir la boucle FOR ci-dessous,
+        # nous allons tester toutes les requêtes ou seulement certaines.
+        #
+        #keys = url_dict.keys()
+        keys = ('json_do_1', 'git_bnz', 'exple')
+        #keys = ('json_do_a', 'git_bnz', 'exple', 'iana', 'tst_fr')
+        #keys = sorted(('pb_dummy', 'g_403', 'g_403_fox', 'g_404'))
+        #keys = [ k for k in url_dict.keys() if k.startswith('g_') ]
+        #keys = [ k for k in url_dict.keys() if k.startswith('pb_') ]
+
+        for key in keys:
+
+            url = url_dict[key]
+            name = key.upper()
+
+            log.info(f'Nouvelle requête : {url}')
+            log.info('~~~~~~~~~~~~~~~~~~~')
+            log.info('')
+            log.info(f'« NOM interne » de cette requête = {name}')
+            log.info('')
+
+            # Cf ci-dessus les remarques concernant :
+            #
+            #       'https://jsonplaceholder.typicode.com/'
+            #
+            #coding = coding_unknown
+            coding = coding_bytes
+
+            #rep, _, charset = skull.send_request_http(url)
+            #rep, _, _ = skull.send_request_http(url, coding=coding_bytes)
+            rep, chartype, charset = skull.send_request_http(url, coding=coding)
+
+            if rep != '':
+
+                out = skull.save_strings_to_file(
+                    rep,
+                    destination=model,
+                    must_be_new=True,
+                    new_suffix=f'{{ {name} }}',
+                    data_type=chartype,
+                    #data_fmt=coding_bytes
+                    data_fmt=charset
+                    )
+
+                out_files.append(out)
+
+            log.info('')
+
+        if len(out_files) > 0:
+            skull.edit_file_txt(*out_files, wait=False)
 
 
     # #######################################################################
