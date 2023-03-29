@@ -50,6 +50,9 @@ if ___debug___:
     import traceback
 
 
+__all__ = ["FileSystemTree", "ScriptSkeleton"]
+
+
 # Les modules suivants ne sont pas importés par défaut, ils ne le seront que
 # sur demande expresse de l'utilisateur de ce script...
 #
@@ -57,6 +60,7 @@ if ___debug___:
 # sont importés ( dans la classe FileSystemTree ), ils puissent être visibles
 # dans tout le reste de ce script !!!
 #
+url_from_bytes = None
 pathlib = None
 fnmatch = None
 glob = None
@@ -99,7 +103,7 @@ walking_via_scandir = 'os.scandir'
 #
 # Les différentes PARTIES sont :
 #
-#   - CONSTANTES et fonctions générales ( _show_(), etc )
+#   - CONSTANTES et fonctions générales ( _show_(), _show_stack_(), etc )
 #
 #   - Définition et fonctions des classes FileSystemTree + _FileSystemLeaf
 #
@@ -175,7 +179,7 @@ walking_via_scandir = 'os.scandir'
 #   - Fonctions spécifiques au WEB ( browser, HTML, HTTP, etc ) :
 #
 #                       . def url_to_valid
-#   ( in autotests )    . def send_request_http
+#   ( in autotests )    . def send_request_url
 #
 # ===========================================================================
 
@@ -184,7 +188,7 @@ walking_via_scandir = 'os.scandir'
 #
 #   PARTIE :
 #   ~~~~~~~~
-#   CONSTANTES et fonctions générales ( _show_(), etc ).
+#   CONSTANTES et fonctions générales ( _show_(), _show_stack_(), etc ).
 #
 # ---------------------------------------------------------------------------
 
@@ -289,6 +293,52 @@ def _show_(msg, journal = None):
 
     if journal is not None:
         journal.debug(msg_to_print)
+
+
+# Fonction d'affichage de la PILE d'EXÉCUTION.
+#
+try:
+    traceback
+
+except NameError:
+
+    def _show_stack_(journal = None):
+
+        if journal is None:
+            return
+
+        journal.debug("\t_RUN_STACK_ ( Trace d'exécution ) :")
+        journal.debug('')
+        journal.debug("\t\tAucune utilisation du module « traceback » dans")
+        journal.debug("\t\t... un code en production pour raison de sécurité.")
+        journal.debug('')
+
+else:
+
+    def _show_stack_(journal = None):
+        """ Pour journaliser la pile d'exécution lors du
+        déclenchement d'une exception.
+        """
+
+        if journal is None:
+            return
+
+        # Nous sauvegardons la pile d'exécution.
+        #
+        # Pour cela, nous la découpons en lignes afin d'en
+        # améliorer la présentation.
+        #
+        traceback_string = traceback.format_exc().rstrip(whitespace)
+        trace_lines = traceback_string.replace('\r', '').split('\n')
+
+        journal.debug("\t_RUN_STACK_ ( Trace d'exécution ) :")
+        journal.debug('')
+
+        for line in trace_lines:
+            if line != '':
+                journal.debug("\t\t%s", line)
+
+        journal.debug('')
 
 
 # ---------------------------------------------------------------------------
@@ -449,6 +499,530 @@ def _generator_create(
         yield yield_fct(node)
 
 
+class _Posix:
+    """ DÉFINITION des spécificités d'un OS POSIX.
+    ( « Posix flavour » sous pathlib )
+
+    Classe reproduite depuis le module « pathlib » afin de
+    pouvoir facilement écrire notre méthode .as_uri(), elle-
+    même utile suite à l'intégration de fonctionnalités pour
+    lancement de requêtes URL dans skeleton.py...
+
+    Finalement, tout comme dans le module pathlib, nous avons
+    donc fini par opter pour une classe « flavour » afin d'y
+    spécifier les caractéristiques de chaque OS.
+    """
+
+    # According to POSIX path resolution :
+    #
+    #   http://pubs.opengroup.org/onlinepubs/009695399/basedefs/xbd_chap04.html#tag_04_11
+    #
+    # "A pathname that begins with two successive slashes may be
+    # interpreted in an implementation-defined manner, although more
+    # than two leading slashes shall be treated as a single slash".
+    #
+    def __init__(self):
+
+        self.has_drv = False
+        self.path_separator = '/'
+        self.is_supported = (os.name != 'nt')
+
+
+    def make_uri(
+        self,
+        node    # FileSystemTree._FileSystemLeaf 
+        ):
+        """ Return the path as a 'file' URI.
+        """
+
+        # We represent the path using the local filesystem
+        # encoding, for portability to other applications.
+        #
+        bpath = bytes(node.location_string)
+        return 'file://' + url_from_bytes(bpath)
+
+
+    def split_drv_root(
+        self,
+        node    # STR [ ou ] FileSystemTree._FileSystemLeaf
+        ):
+        """ Par rapport au module pathlib, ceci est 1 version modifiée
+        de sa méthode _PosixFlavour.splitroot().
+
+        Nous l'avons adaptée à notre sauce, puisque nous n'utilisons
+        actuellement split_drv_root() que dans la méthode is_absolute()
+        de notre classe FileSystemTree._FileSystemLeaf.
+
+        :param node: le fonctionnement "normal" de skeleton implique que
+        « node » soit une instance de FileSystemTree._FileSystemLeaf. Pour
+        autant, nous autorisons que ce paramètre soit une STRING, et ceci
+        afin de pouvoir tester directement _Windows.split_drv_root() dans
+        une fenêtre Python ( IDLE ou autres ).
+
+        :return: drv, root, relative path
+        """
+        
+        sep = self.path_separator
+
+        if isinstance(node, str):
+            path = node
+        else:
+            path = node.location_string
+
+        # Sous POSIX pas de DRIVE.
+        #
+        drv = ''
+
+        if path[0] == sep:
+
+            # "A pathname that begins with two successive
+            # slashes may be interpreted in an implementation
+            # -defined manner, although more than two leading
+            # slashes shall be treated as a single slash".
+            #
+            stripped_path = path.lstrip(sep)
+
+            if len(path) - len(stripped_path) == 2:
+                # Notre RACINE ( '//' ) puis notre path.
+                #
+                return drv, sep * 2, stripped_path
+
+            else:
+                # Notre RACINE ( '/' ) puis notre path.
+                #
+                return drv, sep, stripped_path
+
+        else:
+            # Nous n'avons pas de RACINE...
+            #
+            return drv, '', path
+
+
+class _Windows:
+    """ DÉFINITION des spécificités d'un OS WINDOWS.
+    ( « Windows flavour » sous pathlib )
+
+    Classe reproduite depuis le module « pathlib » afin de
+    pouvoir facilement écrire notre méthode .as_uri(), elle-
+    même utile suite à l'intégration de fonctionnalités pour
+    lancement de requêtes URL dans skeleton.py...
+
+    Finalement, tout comme dans le module pathlib, nous avons
+    donc fini par opter pour une classe « flavour » afin d'y
+    spécifier les caractéristiques de chaque OS.
+    """
+
+    # Reference for Windows paths can be found at :
+    #
+    #   http://msdn.microsoft.com/en-us/library/aa365247%28v=vs.85%29.aspx
+    #   https://learn.microsoft.com/en-gb/windows/win32/fileio/naming-a-file
+    #   https://learn.microsoft.com/fr-fr/windows/win32/fileio/naming-a-file
+    #   https://learn.microsoft.com/fr-fr/dotnet/standard/io/file-path-formats
+    #
+    # Cf également ci-dessous :
+    #
+    #   « Conventions d'affectation de noms : »
+    #
+    # URI for a path on a local drive => 'file:///c:/a/b'
+    # URI for a path on a network drive => 'file://host/share/a/b'
+    #
+    #
+    # ===>>> Interesting findings about EXTENDED PATHS : with the '\\?\' prefix
+    #        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    #
+    # * '\\?\c:\a' is an extended path, which bypasses normal Windows API
+    #   path processing. Thus relative paths are not resolved and slash is not
+    #   translated to backslash. It has the native NT path limit of 32767
+    #   characters, but a bit less after resolving device symbolic links,
+    #   such as '\??\C:' => '\Device\HarddiskVolume2'.
+    #
+    # * '\\?\c:/a' looks for a device named 'C:/a' because slash is a
+    #   regular name character in the object namespace.
+    #
+    # * '\\?\c:\foo/bar' is invalid because '/' is illegal in NT filesystems.
+    #   The only path separator at the filesystem level is backslash.
+    #
+    # * '//?/c:\a' and '//?/c:/a' are effectively equivalent to '\\.\c:\a' and
+    #   thus limited to MAX_PATH.
+    #
+    # * Prior to Windows 8, ANSI API bytes paths are limited to MAX_PATH,
+    #   even with the '\\?\' prefix.
+    #
+    # * XXX extended paths should also disable the collapsing of "." components
+    # (according to MSDN docs).
+    #
+    #
+    # ===>>> Interesting findings about UNC ( Universal Naming Convention ) :
+    #        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    #
+    # * Is a UNC path :
+    #
+    #       vvvvvvvvvvvvvvvvvvvvv root
+    #       \\machine\mountpoint\directory\etc\...
+    #                  directory ^^^^^^^^^^^^^^
+    #
+    # * A UNC path can't have two slashes in a row (after the initial two).
+    #
+    #
+    # ===>>> Interesting findings about RESERVED PATHS :
+    #        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    #
+    # * NOTE: the rules for reserved names seem somewhat complicated
+    # (e.g. r"..\NUL" is reserved but not r"foo\NUL" if "foo" does not
+    # exist). We err on the side of caution and return True for paths
+    # which are not considered reserved by Windows.
+    #
+    # * UNC paths are never reserved.
+    #
+    #
+    # ===>>> Autres INTIALISATIONS présentes dans pathlib._WindowsFlavour() :
+    #        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    #
+    #   altsep = '/'
+    #
+    #   reserved_names = (
+    #       {'CON', 'PRN', 'AUX', 'NUL', 'CONIN$', 'CONOUT$'} |
+    #       {'COM%s' % c for c in '123456789\xb9\xb2\xb3'} |
+    #       {'LPT%s' % c for c in '123456789\xb9\xb2\xb3'}
+    #       )
+    #
+    def __init__(self):
+
+        self.has_drv = True
+        self.path_separator = '\\'
+        self.is_supported = (os.name == 'nt')
+
+        self.lst_extended_prefix = [
+            '\\\\?\\',
+            '\\\\.\\',
+            ]
+
+        self.drive_letters = set(
+            'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
+            )
+
+
+    def make_uri(
+        self,
+        node    # FileSystemTree._FileSystemLeaf 
+        ):
+        """ Return the path as a 'file' URI.
+        """
+
+        # Under Windows, file URIs use the UTF-8 encoding.
+        #
+        drive = node.drive
+
+        if len(drive) == 2 and drive[1] == ':':
+
+            # It's a path on a local drive => 'file:///c:/a/b'
+            rest = node.as_posix()[2:].lstrip('/')
+
+            return 'file:///%s/%s' % (
+                        drive,
+                        url_from_bytes(rest.encode('utf-8'))
+                        )
+
+        else:
+
+            # It's a path on a network drive => 'file://host/share/a/b'
+            return 'file:' + url_from_bytes(
+                        node.as_posix().encode('utf-8')
+                        )
+
+
+    def split_drv_root(
+        self,
+        node    # STR [ ou ] FileSystemTree._FileSystemLeaf
+        ):
+        """ Ceci est une version modifiée et très simplifiée de la
+        méthode _WindowsFlavour.splitroot() présente dans le module
+        pathlib !!!
+
+        Pour mieux comprendre le fonctionnement sous Windows de la
+        méthode pathlib._WindowsFlavour.splitroot() :
+
+            >>> import pathlib
+
+            >>> p = pathlib.Path('K:\\Renato\\xpdata.asp')
+            >>> p
+                WindowsPath('K:/Renato/xpdata.asp')
+            >>> p._drv
+                'K:'
+            >>> p._root
+                '\\'
+            >>> p.parts
+                ('K:\\', 'Renato', 'xpdata.asp')
+            >>> p._flavour
+                <pathlib._WindowsFlavour object at 0x000002B1C60F5310>
+            >>> p._flavour.splitroot(p.parts[0])
+                ('K:', '\\', '')
+            >>> p._flavour.splitroot(p.parts[1])
+                ('', '', 'Renato')
+            >>> p._flavour.splitroot(p.parts[2])
+                ('', '', 'xpdata.asp')
+            >>> p.as_uri()
+                'file:///K:/Renato/xpdata.asp'
+
+            >>> p = pathlib.Path(r'\\?\Volume{26a21bda-80e6f6e696963}\test.txt')
+            >>> p
+                WindowsPath('//?/Volume{26a21bda-80e6f6e696963}/test.txt')
+            >>> p._drv
+                '\\\\?\\'
+            >>> p._root                                                     ##### ??? CE N'EST PAS UN PATH ABSOLU ??? ######
+                ''                                                          ### Pour MSDN + pour split_drv_root(), si... ###
+            >>> p.parts
+                ('\\\\?\\', 'Volume{26a21bda-80e6f6e696963}', 'test.txt')
+            >>> p._flavour.splitroot(p.parts[0])
+                ('\\\\?\\', '', '')
+            >>> p._flavour.splitroot(p.parts[1])
+                ('', '', 'Volume{26a21bda-80e6f6e696963}')
+            >>> p.as_uri()
+                ValueError: relative path can't be expressed as a file URI
+
+        Nous l'avons adaptée à notre sauce, puisque nous n'utilisons
+        actuellement split_drv_root() que dans la méthode is_absolute()
+        de notre classe FileSystemTree._FileSystemLeaf.
+
+        :param node: le fonctionnement "normal" de skeleton implique que
+        « node » soit une instance de FileSystemTree._FileSystemLeaf. Pour
+        autant, nous autorisons que ce paramètre soit une STRING, et ceci
+        afin de pouvoir tester directement _Windows.split_drv_root() dans
+        une fenêtre Python ( IDLE ou autres ).
+
+        :return: drv, root, relative path
+        """
+
+        sep = self.path_separator
+
+        if isinstance(node, str):
+            path = node
+        else:
+            path = node.location_string
+
+        # Conventions d'affectation de noms :
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        #
+        #   * Utilisez une barre oblique inverse comme requis dans le cadre
+        # des noms de volumes, par exemple, « C:\ » dans « C:\path\file »
+        # ou « \\server\share » dans « \\server\share\path\file » pour les
+        # noms UNC (Universal Naming Convention).
+        #
+        #
+        # Il existe trois types de points de montage de volume :
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        #
+        #   * Lettre de lecteur, par exemple, « C:\ ».
+        #   * Un dossier monté, par exemple, « C:\MountD\ ».
+        #   * Chemin d'accès GUID du volume ( « \\?\Volume{GUID}\ » ), par
+        # exemple, « \\?\Volume{26a21bda-a627-11d7-9931-806e6f6e696963}\ ».
+        #
+        # Le préfixe « \\?\ » désactive l'analyse de chemin et n'est pas
+        # considéré comme faisant partie du chemin d'accès.
+        #
+        #
+        # Paths RELATIFS : où l'on lit que « \\?\Volume{GUID}\ » est ABSOLU !!!
+        # ~~~~~~~~~~~~~~~~
+        #
+        # Un nom de fichier est relatif au répertoire actif s'il ne commence
+        # pas par l'un des éléments suivants :
+        #
+        #   * Nom UNC de n'importe quel format, qui commence toujours par
+        # deux caractères de barre oblique inverse (« \\ »).
+        #   * Un désignateur de disque avec une barre oblique inverse, par
+        # exemple « C:\ » ou « d:\ ».
+        #   * Barre oblique inverse unique, par exemple , « \directory » ou
+        # « \file.txt ». Il s'agit également d'un chemin d'accès absolu.
+        #
+        prefix = ''
+        drv = root = relative = ''
+
+        # S'agit-il d'un EXTENDED PATHS type « \\?\xxx » ?
+        #
+        # Cf ci-dessus « Interesting findings about EXTENDED PATHS ».
+        #
+        first = path[0:1]
+        second = path[1:2]
+        unc_path = (second == sep and first == sep)
+
+        if unc_path and path[:4] in self.lst_extended_prefix:
+
+            # Dans un tel cas, plusieurs possibilités sont à considérer :
+            #
+            #   \\?\K:\Renato
+            #   \\?\Volume{03b8d832-1552-45a5-827e-cfffa76aa867}\Renato
+            #   
+            # ( il suffit de copier / coller ces paths sous FireFox pour
+            # constater qu'ils sont valides !!! )
+            #
+            # RQ : Pour connaître le { GUID } d'un disque, il suffit de
+            # lancer sous l'invite de commandes DOS :
+            #
+            #   mountvol.exe
+            #
+            # ... qui va lister ( en fin de ses résultats ) les différents
+            # disque et leur { GUID }.
+            #
+            # D'après le code de la fonction _WindowsFlavour.splitroot() du
+            # module pathlib, une notation du type :
+            #
+            #   \\?\UNC\Server\Share\Test\Foo.txt
+            #
+            # ... est aussi possible. Ceci est d'ailleurs confirmé par
+            # microsoft.com :
+            #
+            #   Cf https://learn.microsoft.com/fr-fr/dotnet/standard/io/file-path-formats
+            #
+            # On lit d'ailleurs dans cette dernière page que seraient aussi
+            # possibles :
+            #
+            #   \\.\K:\Renato
+            #   \\.\Volume{03b8d832-1552-45a5-827e-cfffa76aa867}\Renato
+            #
+            # ... mais seulement dans l'invite de commandes DOS. Et, en
+            # effet, sous DOS :
+            #
+            #   dir \\.\K:\Renato
+            #   dir \\?\K:\Renato
+            #   dir \\.\Volume{03b8d832-1552-45a5-827e-cfffa76aa867}\Renato
+            #   dir \\?\Volume{03b8d832-1552-45a5-827e-cfffa76aa867}\Renato
+            #
+            # ... sont équivalents !!!
+            #
+            # BREF, nous allons placer dans « prefix » l'entête de ce type de
+            # path ( ie \\?\ ou \\?\UNC\ ).
+            #
+            # Par ailleurs, « path » contiendra :
+            #
+            #   . soit « X:\xxx », dans le cas « \\?\X:\xxx »,
+            #   . soit « \\xxx », dans le cas « \\?\UNC\xxx »,
+            #   . soit « \\xxx », dans le cas « \\?\Volume{nn}\xxx ».
+            #
+            # Enfin, dans le cas « \\?\Volume{nn}\xxx », notre « drv » sera
+            # affectée à la valeur « Volume{nn} ».
+            #
+            prefix = path[:4]
+            path = path[4:]
+
+            # « \\?\UNC\ » est aussi possible, et cela indique un UNC ( bien
+            # sûr ! ). Le reste du path sera analysée dans la partie qui suit,
+            # dédiée aux UNC. Pour que cette analyse ait lieu, « path » doit
+            # débuter par « \\ » ( ainsi « unc_path » sera vrai ).
+            #
+            if path.startswith('UNC\\'):
+                prefix += path[:3]
+                path = '\\' + path[3:]
+
+            # « \\?\Volume{nn}\ »
+            #
+            # La suite du path sera analysée dans les parties dédiées aux paths
+            # « classiques », « path » ( la partie restante ) ne commence donc
+            # pas par « \\ ».
+            elif path.startswith('Volume{'):
+                idx = path.find('}') + 1
+                drv = path[:idx]
+                path = path[idx:]
+
+            first = path[0:1]
+            second = path[1:2]
+            unc_path = (second == sep and first == sep)
+
+        # S'agit-il d'un nom UNC de n'importe quel format ? Il commence par
+        # deux caractères de barre oblique inverse ( « \\ » ).
+        #
+        third = path[2:3]
+
+        if unc_path and third != sep:
+
+            # An UNC path:
+            #
+            #   vvvvvvvvvvvvvvvvvvvvv root
+            #   \\machine\mountpoint\directory\etc\...
+            #              directory ^^^^^^^^^^^^^^
+            #
+            idx = path.find(sep, 2)
+            if idx != -1:
+
+                # Nous avons trouvé \\machine\. Nous cherchons mountpoint\.
+                #
+                last = path.find(sep, idx + 1)
+
+                # An UNC path can't have two slashes in a row ( after the
+                # initial two ).
+                #
+                if last != idx + 1:
+
+                    # Le path se résume a \\machine\mountpoint.
+                    #
+                    if last == -1:
+                        last = len(path)
+
+                    # Si nous avions un préfixe ( type « \\?\UNC\ » ), nous
+                    # avons ci-dessus ajouté un « \ », donc ici nous allons
+                    # le retirer via « [1: ».
+                    #
+                    drv = path[1:last] if prefix else path[:last]
+                    root = sep
+
+                    # Même si « last = len(path) », « path[last + 1:] » ne
+                    # déclenchera pas d'exception.
+                    #
+                    # En effet, par exemple, avec :
+                    #
+                    #   path = « \\machine\mountpoint\ »
+                    #   i.e path = r"\\machine\mountpoint" + '\\'
+                    #
+                    # ... « path[2000] » lèvera :
+                    #
+                    #   Traceback (most recent call last):
+                    #     File "<pyshell#1>", line 1, in <module>
+                    #       path[2000]
+                    #   IndexError: string index out of range
+                    #
+                    # ... alors que path[2000:] renverra « '' » !!!
+                    #
+                    path = path[last + 1:]
+
+        # Nous finissons par le traitement des cas classiques, dont le 1er
+        # est : « X:\xxx ».
+        #
+        if second == ':' and first in self.drive_letters:
+
+            # La syntaxe « \\?\Volume{nn}\X:\xxx » n'est pas autorisée donc
+            # pas besoin d'écrire « drv += '\\' + path[:2] ».
+            #
+            # En effet, soit \\?\Volume{nn} désigne le disque, soit X:. L'un
+            # est un alias de l'autre. Il suffit de lancer mountvol.exe pour
+            # s'en rendre compte :
+            #
+            #   C:\> mountvol
+            #
+            #       \\?\Volume{e9b5ff66-7351-4dd3-8bb3-b6c3fb136fc6}\
+            #       C:\
+            #
+            # De même pour la syntaxe « \\machine\mountpoint\X:\xxx ».
+            #
+            drv = path[:2]
+            path = path[2:]
+            first = third
+
+        # Nous traitons ici un dernier cas ie : « \xxx », dont on permet
+        # qu'il puisse, par exemple, également s'écrire : « \\\xxx ».
+        #
+        if first == sep:
+            root = first
+            path = path.lstrip(sep)
+
+        return prefix + drv, root, path
+
+
+# Une seule instance de chacune des classes de définition d'un OS suffit,
+# pas besoin d'instancier un de ces objets pour chaque FileSystemTree...
+#
+_posix = _Posix()
+_windows = _Windows()
+
+
 class FileSystemTree:
     """ Cette classe permet de gérer répertoires et fichiers.
     Pour ceci, suivant sa configuration, elle s'appuie soit
@@ -572,6 +1146,7 @@ class FileSystemTree:
         log_debug("Configuration de la GESTION des FICHIERS :")
         log_debug('==========================================')
 
+        self.flavour = _windows if os.name == 'nt' else _posix
         self.walking_mode = walking_mode
 
         log_debug('\tWALKING MODE\t= ' + str(walking_mode))
@@ -581,15 +1156,39 @@ class FileSystemTree:
         self.pathlib_direct = (with_pathlib == pathlib_direct)
         if self.pathlib_import:
 
+            # Puisque nous avons défini une variable globale du
+            # nom de pathlib, écrire simplement :
+            #
+            #   try: pathlib
+            #   except NameError: import pathlib
+            #
+            # ... ne permettra pas d'importer le module pathlib
+            # puisque « try: pathlib » ne lèvera pas d'exception
+            # ( la variable pathlib existe déjà... ).
+            #
             global pathlib
             try: pathlib.PurePath()
             except AttributeError: import pathlib
+
+        else:
+
+            # Pour simuler la fonction pathlib.Path().as_uri(),
+            # nous aurons besoin, tout comme le module pathlib,
+            # de la fonct° « quote_from_bytes » issue du module
+            # urllib.parse...
+            #
+            global url_from_bytes
+            from urllib.parse import quote_from_bytes as url_from_bytes
 
         log_debug('\tPATHLIB\t\t= ' + str(pathlib))
 
         self.with_fnmatch = with_fnmatch
         if with_fnmatch:
 
+            # Sur le pourquoi du test « except AttributeError: »
+            # et non d'un test « except NameError: », cf ci-dessus
+            # « except NameError: import pathlib ».
+            #
             global fnmatch
             try: fnmatch.translate('test_if*already_imported')
             except AttributeError: import fnmatch
@@ -599,6 +1198,10 @@ class FileSystemTree:
         self.with_glob = with_glob
         if with_glob:
 
+            # Sur le pourquoi du test « except AttributeError: »
+            # et non d'un test « except NameError: », cf ci-dessus
+            # « except NameError: import pathlib ».
+            #
             global glob
             try: glob.iglob('test_if*already_imported')
             except AttributeError: import glob
@@ -623,7 +1226,7 @@ class FileSystemTree:
         self.write_in_log = log_debug
 
 
-    def cwd(self) -> os.PathLike:
+    def cwd(self) -> object:
         # -> _FileSystemLeaf [ ou ] PATHLIB.PATH
         """ Pour connaître le RÉPERTOIRE de TRAVAIL.
 
@@ -646,7 +1249,7 @@ class FileSystemTree:
             return self._FileSystemLeaf(self, os.getcwd())
   
 
-    def home(self) -> os.PathLike:
+    def home(self) -> object:
         # -> _FileSystemLeaf [ ou ] PATHLIB.PATH
         """ Pour connaître le RÉPERTOIRE de l'UTILISATEUR.
 
@@ -932,7 +1535,23 @@ class FileSystemTree:
             for passing to system calls.
             """
 
-            return self.location_string
+            if self.tree.pathlib_import:
+                # Lorsque nous nous trouvons ici, alors notre mode
+                # d'exécution est « pathlib_deeply ».
+                #
+                # Ainsi, nous utilisons le module PATHLIB, mais pas
+                # directement. Un objet _FileSystemLeaf est créé afin
+                # d'accéder et / ou manipuler un noeud du système de
+                # fichiers, via les méthodes du module PATHLIB.
+                #
+                return str(location_object)
+
+            else:
+                # Nous sommes ici dans le mode « pathlib_ignore » et
+                # nous n'utilisons que les fonctions de OS.PATH pour
+                # émuler les méthodes de PATHLIB.
+                #
+                return self.location_string
 
 
         def __truediv__(
@@ -967,9 +1586,9 @@ class FileSystemTree:
                 # fichiers, via les méthodes du module PATHLIB.
                 #
                 return FileSystemTree._FileSystemLeaf(
-                    self.tree,
-                    self.location_object.__truediv__(p)
-                    )
+                            self.tree,
+                            self.location_object.__truediv__(p)
+                            )
 
             else:
                 # Nous sommes ici dans le mode « pathlib_ignore » et
@@ -977,9 +1596,9 @@ class FileSystemTree:
                 # émuler les méthodes de PATHLIB.
                 #
                 return FileSystemTree._FileSystemLeaf(
-                    self.tree,
-                    os.path.join(self.location_string, p)
-                    )
+                            self.tree,
+                            os.path.join(self.location_string, p)
+                            )
 
 
         def __rtruediv__(
@@ -1014,9 +1633,9 @@ class FileSystemTree:
                 # fichiers, via les méthodes du module PATHLIB.
                 #
                 return FileSystemTree._FileSystemLeaf(
-                    self.tree,
-                    self.location_object.__rtruediv__(p)
-                    )
+                            self.tree,
+                            self.location_object.__rtruediv__(p)
+                            )
 
             elif isinstance(path, str):
                 # Nous sommes ici dans le mode « pathlib_ignore » et
@@ -1024,9 +1643,9 @@ class FileSystemTree:
                 # émuler les méthodes de PATHLIB.
                 #
                 return FileSystemTree._FileSystemLeaf(
-                    self.tree,
-                    os.path.join(p, self.location_string)
-                    )
+                            self.tree,
+                            os.path.join(p, self.location_string)
+                            )
 
 
         def is_dir(self) -> bool:
@@ -1233,6 +1852,123 @@ class FileSystemTree:
                 #
                 _, extension = os.path.splitext(self.location_string)
                 return extension
+
+
+        def is_absolute(self) -> bool:
+            """ Sommes-nous un path ABSOLU ?
+
+            True if the path is absolute (has both a root and, if
+            applicable, a drive).
+
+            Fonction reproduite depuis le module « pathlib » afin de
+            pouvoir facilement écrire notre méthode .as_uri(), elle-
+            même utile suite à l'intégration de fonctionnalités pour
+            lancement de requêtes URL dans skeleton.py...
+            """
+
+            if self.tree.pathlib_import:
+                # Lorsque nous nous trouvons ici, alors notre mode
+                # d'exécution est « pathlib_deeply ».
+                #
+                # Ainsi, nous utilisons le module PATHLIB, mais pas
+                # directement. Un objet _FileSystemLeaf est créé afin
+                # d'accéder et / ou manipuler un noeud du système de
+                # fichiers, via les méthodes du module PATHLIB.
+                #
+                return self.location_object.is_absolute()
+
+            else:
+                # Nous sommes ici dans le mode « pathlib_ignore » et
+                # nous n'utilisons que les fonctions de OS.PATH pour
+                # émuler les méthodes de PATHLIB.
+                #
+                drv, root, _ = self.tree.flavour.split_drv_root(self)
+
+                # Si la racine est vide ( '' ), nous ne sommes pas un
+                # path absolu...
+                #
+                if not root:
+                    return False
+
+                # Nous avons une racine, tout va donc dépendre de si
+                # nous avons ou pas un DRIVE ( ie si drv != '') ...
+                #
+                # ... si tant est que nous devions en avoir dans le
+                # cas de notre OS !!!
+                #
+                return not self.tree.flavour.has_drv or bool(drv)
+
+
+        def as_posix(self) -> str:
+            """ Return the string representation of the path with
+            forward (/) slashes.
+
+            Fonction reproduite depuis le module « pathlib » afin de
+            pouvoir facilement écrire notre méthode .as_uri(), elle-
+            même utile suite à l'intégration de fonctionnalités pour
+            lancement de requêtes URL dans skeleton.py...
+            """
+
+            if self.tree.pathlib_import:
+                # Lorsque nous nous trouvons ici, alors notre mode
+                # d'exécution est « pathlib_deeply ».
+                #
+                # Ainsi, nous utilisons le module PATHLIB, mais pas
+                # directement. Un objet _FileSystemLeaf est créé afin
+                # d'accéder et / ou manipuler un noeud du système de
+                # fichiers, via les méthodes du module PATHLIB.
+                #
+                return self.location_object.as_posix()
+
+            else:
+                # Nous sommes ici dans le mode « pathlib_ignore » et
+                # nous n'utilisons que les fonctions de OS.PATH pour
+                # émuler les méthodes de PATHLIB.
+                #
+                return self.location_string.replace(
+                            self.tree.flavour.path_separator,
+                            '/'
+                            )
+
+
+        def as_uri(self) -> str:
+            """ Return the path as a 'file' URI.
+
+            Fonction reproduite depuis le module « pathlib » suite à
+            l'intégration de fonctionnalités pour lancement de requêtes
+            URL dans skeleton.py...
+
+            Cf https://docs.python.org/fr/3/library/pathlib.html#pathlib.PurePath.as_uri
+            Cf https://docs.python.org/3/library/urllib.parse.html#urllib.parse.quote
+            Cf https://docs.python.org/3/library/urllib.parse.html#urllib.parse.quote_from_bytes
+            """
+
+            if self.tree.pathlib_import:
+                # Lorsque nous nous trouvons ici, alors notre mode
+                # d'exécution est « pathlib_deeply ».
+                #
+                # Ainsi, nous utilisons le module PATHLIB, mais pas
+                # directement. Un objet _FileSystemLeaf est créé afin
+                # d'accéder et / ou manipuler un noeud du système de
+                # fichiers, via les méthodes du module PATHLIB.
+                #
+                return self.location_object.as_uri()
+
+            # Nous sommes ici dans le mode « pathlib_ignore » et nous
+            # n'utilisons que les fonctions de OS.PATH pour émuler les
+            # méthodes de PATHLIB.
+            #
+            elif not self.is_absolute():
+                # Pas de URI pour des paths RELATIFS !!!
+                #
+                raise ValueError(
+                        "Relative path can't be expressed as a file URI."
+                        )
+
+            else:
+                # La construction de notre URI dépend de notre OS.
+                #
+                return self.tree.flavour.make_uri(self)
 
 
         def with_name(
@@ -2894,7 +3630,7 @@ class ScriptSkeleton:
 
         # ATTENTION : Lorsque nous serons dans notre méthode __del__() et donc dans le
         # ramasse-miettes de Python = POTENTIELLEMENT, les objets LOG seront aussi en
-        # train d’être détruits, voire l'auront déjà été... !!!
+        # train d'être détruits, voire l'auront déjà été... !!!
         #
         # Donc nous nous prémunissons contre cela via des fonctions LAMBDA qui feront
         # ou pas référence à notre log, suivant le cas.
@@ -3014,7 +3750,7 @@ class ScriptSkeleton:
         self._we_are_inside_del_method = True
 
         # ATTENTION : Dans notre méthode __del__() et donc dans le ramasse-miettes
-        # de Python = POTENTIELLEMENT, les objets LOG sont aussi en train d’être
+        # de Python = POTENTIELLEMENT, les objets LOG sont aussi en train d'être
         # détruits, voire l'ont déjà été... !!!
         #
         # Donc nous choisissons d'autres façons d'afficher le LOG en cette toute
@@ -4005,7 +4741,7 @@ class ScriptSkeleton:
         # le fichier LOG...
         #
         # Normalement, l'utilisateur de ce module doit appeler
-        # on_dit_au_revoir() lorsqu’il a fini... mais, au cas où
+        # on_dit_au_revoir() lorsqu'il a fini... mais, au cas où
         # il ne le ferait pas, nous appelons aussi cette fonction
         # dans notre méthode __del__(). Nous réalisons alors ce
         # que nous pouvons encore faire...
@@ -4016,8 +4752,8 @@ class ScriptSkeleton:
             # par l'utilisateur de ce module. Nous revenons ici
             # probablement depuis notre méthode __del__ qui nous
             # appelle aussi, et ce afin que nous puissions faire
-            # ce que nous pouvons encore faire si l’utilisateur
-            # du module n’a pas appeler on_dit_aurevoir(), comme
+            # ce que nous pouvons encore faire si l'utilisateur
+            # du module n'a pas appeler on_dit_aurevoir(), comme
             # il le devrait...
             #
             self.shw_debug('Nous avons déjà dit au revoir...')
@@ -5821,7 +6557,7 @@ class ScriptSkeleton:
                     comparaison = set(file1) | set(file2)
 
                 else:
-                    raise ValueError
+                    raise ValueError('Unknown compare action...')
 
 
         # On supprime les lignes vides de
@@ -6060,6 +6796,7 @@ class ScriptSkeleton:
             f_other = 'BYTES'
             f_flag = 'wt'
 
+        log.debug('Type en entrée = « %s »', data_type)
         log.debug('Format en entrée = « %s »', data_fmt)
         log.debug('Format en sortie = « %s »', f_flag)
         log.debug('')
@@ -6068,13 +6805,24 @@ class ScriptSkeleton:
         self.shw_debug(f'Format = « {f_flag} »')
         self.shw('')
 
+        # On transforme « None » en STRING afin de convertir
+        # notre type de données en minuscules pour faciliter
+        # les tests par la suite.
+        #
+        # RQ : some_string OR '' = some_string
+        #         None     OR '' = ''
+        #
+        # Nous pourrons ensuite comparer bien plus simplement
+        # « data_type » avec les types attendus ( 'json', ... )
+        # sans avoir à nous soucier des majuscules.
+        #
+        data_type = (data_type or '').lower()
+
         with open(file_dst, f_flag) as new_file:
 
             for content in args:
 
-                if f_flag == 'wt' \
-                    and data_type is not None \
-                    and 'json' in data_type.lower():
+                if f_flag == 'wt' and 'json' in data_type:
 
                     log.debug("Fichier destination format TEXTE")
                     log.debug("+ Contenu à écrire format JSON")
@@ -6085,8 +6833,11 @@ class ScriptSkeleton:
                     # de type JSON ( en espérant que le traitement soit ainsi
                     # accéléré ).
                     #
-                    # Par contre, ce module JSON ne sait traiter que des datas
-                    # au format TXT...
+                    # Par contre, json.dump() ne sait traiter que des datas au
+                    # format STRING en entrée et ne sait écrire que des datas
+                    # au format STRING en sortie. Or quand f_flag == 'wb', nos
+                    # données sont au format BYTES en entrée et, en sortie, le
+                    # fichier en ouvert en mode BYTES !!!
                     #
                     # Cf https://docs.python.org/fr/3/library/json.html#basic-usage :
                     #
@@ -6094,6 +6845,26 @@ class ScriptSkeleton:
                     #   Le module json produit toujours des objets str, et non
                     #   des objets bytes. fp.write() doit ainsi prendre en charge
                     #   un objet str en entrée.
+                    #
+                    # Pour écrire via le module JSON dans un fichier ouvert en
+                    # mode BYTES, il nous faudrait écrire un code type :
+                    #
+                    #   json_str = json.dumps(json.loads(content))
+                    #   new_file.write(json_str.encode(encoding='utf-8'))
+                    #
+                    # ... car json.loads() accepte du contenu au format BYTES,
+                    # et car, « according to RFC 4627, the default encoding of
+                    # UTF-8 is an absolute requirement of the application/json
+                    # specification. That's not to say that every single server
+                    # plays by the rules, but generally, you can assume that if
+                    # JSON is being transmitted, it'll almost always be encoded
+                    # using UTF-8. »
+                    #
+                    # BREF, nous arriverions alors à un code bien compliqué pour
+                    # simplement utiliser le module JSON !!!
+                    #
+                    # DONC nous ne l'utilisons si et seulement si le fichier de
+                    # destination est au format TXT !!!
                     #
                     json.dump(content, new_file)
 
@@ -6141,21 +6912,7 @@ class ScriptSkeleton:
                         log.debug("\t... qui pourrait faire planter le module de LOG !!!")
                         log.debug('')
 
-                        if ___debug___:
-                            # Nous allons sauvegarder la pile d'exécution.
-                            #
-                            # Pour cela, nous la découpons en lignes afin
-                            # d'en améliorer la présentation.
-                            #
-                            traceback_string = traceback.format_exc()
-                            trace_lines = traceback_string.rstrip(whitespace).split('\n')
-
-                            log.debug("\tNous journalisons toutefois la trace d'exécution :")
-                            log.debug('')
-                            for line in trace_lines:
-                                if line != '':
-                                    log.debug("\t\t%s", line)
-                            log.debug('')
+                        _show_stack_(log)
 
                         self.shw(f"\tCodage actuel pour écriture dans le fichier = « {f_actual} ».")
                         self.shw(f"\tNe faudrait-il pas plutôt utiliser le format « {f_other} » ?")
@@ -6288,6 +7045,13 @@ class ScriptSkeleton:
 
         valid_url = url
 
+        # Plutôt que de nous servir de notre tableau _url_forbiddens, nous
+        # pouvions utiliser les fonctions de parsing du module urllib.parse !
+        #
+        # Cf https://docs.python.org/3/library/urllib.parse.html#url-quoting
+        # Cf https://docs.python.org/3/library/urllib.parse.html#urllib.parse.quote
+        # Cf https://docs.python.org/3/library/urllib.parse.html#urllib.parse.quote_from_bytes
+        #
         for key, value in self._url_forbiddens.items():
 
             if key in url:
@@ -6297,7 +7061,7 @@ class ScriptSkeleton:
         return valid_url
 
 
-    def send_request_http(
+    def send_request_url(
         self,
         url: str,
         coding: str = coding_unknown
@@ -6337,13 +7101,63 @@ class ScriptSkeleton:
             # Pour économiser les ressources, on utilise WITH... ie
             # l'objet réponse sera libéré dès la sortie du bloc.
             #
+            # Cf https://realpython.com/urllib-request/
+            #
             # « Using the context manager with, you make a request and
             # receive a response with urlopen(). Then you read the body
             # of the response and close the response object. »
             #
+            # « If you've fully read the response, the subsequent attempt
+            # just returns an empty bytes object even though the response
+            # isn't closed. You'd have to make the request again.
+            #
+            # In this regard, the response is different from a file object,
+            # because with a file object, you can read it multiple times by
+            # using the .seek() method, which HTTPResponse doesn't support.
+            #
+            # Even after closing a response, you can still access the headers
+            # and other metadata, though. »
+            #
             #with urllib.request.urlopen(url_valid, timeout=3) as data:
             with urllib.request.urlopen(request, timeout=3) as data:
 
+                # Pour savoir ce qu'est et contient « data » :
+                #
+                #   cf https://docs.python.org/3/library/urllib.request.html#module-urllib.response
+                #   cf https://docs.python.org/3/library/http.client.html#httpresponse-objects
+                #   cf https://docs.python.org/3/library/email.message.html#email.message.EmailMessage
+                #   cf https://realpython.com/urllib-request/
+                #
+                #   « The main representation of an HTTP message that
+                # you'll be interacting with when using urllib.request
+                # is the HTTPResponse object. (..)
+                #
+                # You might think that HTTPMessage is a sort of base class,
+                # which HTTPResponse inherits from, but it's not. HTTPResponse
+                # inherits directly from io.BufferedIOBase, while the HTTPMessage
+                # class inherits from email.message.EmailMessage.
+                #
+                # The EmailMessage is defined in the source code as an object
+                # that contains a bunch of headers and a payload, so it doesn't
+                # necessarily have to be an email. HTTPResponse simply uses
+                # HTTPMessage as a container for its headers.
+                #
+                # However, if you're talking about HTTP itself and not its
+                # Python implementation, then you'd be right to think about
+                # an HTTP response as a kind of HTTP message.
+                #
+                # When you make a request with urllib.request.urlopen(), you
+                # get an HTTPResponse object in return. Spend some time exploring
+                # the HTTPResponse object with pprint() and dir() to see all the
+                # different methods and properties that belong to it:
+                #
+                #   >>> from urllib.request import urlopen
+                #   >>> from pprint import pprint
+                #   >>> with urlopen("https://www.example.com") as response:
+                #   ...     type(response)
+                #   ...     pprint(dir(response))
+                #
+                data_type = type(data)
                 url_bytes = data.read()
 
                 # data.url = URL of the resource retrieved, commonly used
@@ -6373,6 +7187,12 @@ class ScriptSkeleton:
                 # EmailMessage instance.
                 #
                 # Cf https://docs.python.org/3/library/email.message.html#email.message.EmailMessage
+                #
+                # HTTPMessage class inherits from email.message.EmailMessage.
+                # HTTPResponse simply uses HTTPMessage as a container for its
+                # headers.
+                #
+                # Cf https://realpython.com/urllib-request/
                 #
                 url_header = data.headers
 
@@ -6474,7 +7294,7 @@ class ScriptSkeleton:
             log.debug('')
 
         else:
-            # EVERYTHING IS FINE : la requête a donné un résultat.
+            # EVERYTHING WENT FINE : la requête a donné un résultat.
 
             # On informe si l'URL originale a été redirigée vers
             # une autre adresse.
@@ -6494,6 +7314,20 @@ class ScriptSkeleton:
             log.debug(f'Status code returned by server = {url_status}')
             log.debug(f'Content type returned by server = {url_content}')
             log.debug(f'Content charset returned by server = {url_charset}')
+            log.debug(f'Response message translation in Python = {data_type}')
+            log.debug(f'Response headers translation in Python = {type(url_header)}')
+            log.debug("Headers' keys = %s", url_header.keys())
+
+            # En « http: », la clé est « Last-Modified ».
+            # En « file: », la clé est « Last-modified ».
+            #
+            last_modified = None
+            for key in ('Last-Modified', 'Last-modified'):
+                if key in url_header.keys():
+                    last_modified = url_header[key]
+                    break
+
+            log.debug('Last-Modified = %s', last_modified)
             log.debug('')
 
             log.debug('Début de « url_bytes » :')
@@ -7439,6 +8273,72 @@ if __name__ == "__main__":
     # #######################################################################
     #
     user_answer = skull.ask_yes_or_no(
+        "Voulez-vous que je réalise mes AUTOTESTS de DÉCOMPOSITIONS de PATH ?",
+        'non'
+        )
+
+    if user_answer:
+
+        # On appelle les fonctions convert_to_pdf_*() pour
+        # vérifier que Python ne plante pas en leur sein.
+        #
+        log.info('')
+        log.info('\t======================================')
+        log.info('\t>>> TEST de DÉCOMPOSITIONS de PATH <<<')
+        log.info('\t======================================')
+        log.info('')
+        log.info('')
+
+        f = _windows if os.name == 'nt' else _posix
+
+        paths = {
+            'relatif no dir': 'Lettres - de Papa à sa Mère.lnk',
+            'relatif w dir' : r'Renato\Lettres - de Papa à sa Mère.lnk',
+            'relatif w /'   : r'\Renato\Lettres - de Papa à sa Mère.lnk',
+            'relatif w .'   : r'.\Renato\Lettres - de Papa à sa Mère.lnk',
+            'relatif w ..'  : r'..\Renato\Lettres - de Papa à sa Mère.lnk',
+            'absolu'        : r'K:\Renato\Lettres - de Papa à sa Mère.lnk',
+            'extend w disk' : r'\\?\K:\Renato\Lettres - de Papa à sa Mère.lnk',
+            'extend w vol'  : r'\\.\Volume{03b8d832-1552-45a5-827e-cfffa76aa867}\Renato\Lettres - de Papa à sa Mère.lnk',
+            'extend + UNC'  : r'\\?\UNC\Server\Share\Test\Foo.txt',
+            'UNC file'      : r'\\machine\mountpoint\directory\etc\Foo.txt',
+            'UNC dir w /'   : r'\\machine\mountpoint\directory\etc' + '\\',
+            'UNC dir no /'  : r'\\machine\mountpoint\directory\etc',
+            'UNC root w /'  : r'\\machine\mountpoint' + '\\',
+            'UNC root no /' : r'\\machine\mountpoint',
+        }
+
+        for k, p in paths.items():
+
+            log.info(f'Répertoire : « {k:^16} » = {p}')
+            log.info('~~~~~~~~~~~~')
+            log.info('')
+            log.info(f'split_drv_root -> {f.split_drv_root(p)}')
+            log.info('')
+
+            try:
+                uri = skull.files.node(p).as_uri()
+            except ValueError:
+                log.info('path.as_uri()  -> « ValueError » car path RELATIF !!!')
+            else:
+                log.info(f'path.as_uri()  -> {uri}')
+
+            log.info('')
+
+            input("\t\t--- PAUSE avant la recherche suivante ---")
+            print()
+
+            log.info(77 * '-')
+            log.info('')
+
+
+    # #######################################################################
+    # -----------------------------------------------------------------------
+    # #######################################################################
+    # -----------------------------------------------------------------------
+    # #######################################################################
+    #
+    user_answer = skull.ask_yes_or_no(
         "Voulez-vous que je réalise mes AUTOTESTS de REQUÊTES HTTP ?",
         'non'
         )
@@ -7454,6 +8354,13 @@ if __name__ == "__main__":
         log.info('\t=============================')
         log.info('')
         log.info('')
+
+        # Sur le pourquoi du test « except AttributeError: »
+        # et non d'un test « except NameError: », cf ci-dessus
+        # « except NameError: import pathlib ».
+        #
+        try: pathlib.PurePath()
+        except AttributeError: import pathlib
 
         url_dict = {
             'git_bnz'   : 'https://bonzzzy.github.io/',
@@ -7523,7 +8430,7 @@ if __name__ == "__main__":
             # en mode TEXTE ( ouvert via « wt » ) le résultat de la requête
             # GET pour cette page, via les appels successifs aux méthodes :
             #
-            # result = skeleton.send_request_http('jsonplaceholder.typicode.com')
+            # result = skeleton.send_request_url('jsonplaceholder.typicode.com')
             # [ puis ] skeleton.save_strings_to_file(result).
             #
             # Le message d'erreur était :
@@ -7568,7 +8475,7 @@ if __name__ == "__main__":
             # ... page bien plus complexe que son simple affichage ne le
             # laisse penser.
             # ... Elle se redirige vers https://www.google.com mais notre
-            # méthode send_request_http() ne le détecte pas ( la méthode
+            # méthode send_request_url() ne le détecte pas ( la méthode
             # ne fait pas la différence entre HTTP et HTTPS ).
             # ( HTML TOTALEMENT ILLISIBLE )
             #
@@ -7576,6 +8483,21 @@ if __name__ == "__main__":
             # Air France = Authentification SAML 2.
             # ( HTML ILLISIBLE = SAMLRequest codée en Base64 )
             # > Cf https://www.dcode.fr/code-base-64 pour décodage.
+            #
+            'ftp_dir'   : "ftp://ftp.adobe.com/",
+            'ftp_html'  : "ftp://ftp.adobe.com/Web_Users_Click_Here.html",
+            'ftp_txt'   : "ftp://ftp.adobe.com/license.txt",
+            'ftp_err'   : "ftp://ftp.adobe.com/try.tst",
+            # Pour tester des requêtes avec le protocole FTP !!!
+            #
+            'file_root' : skull.files.node(r'K:\.').as_uri(),
+            'file_dir'  : skull.files.node(r'K:\Renato').as_uri(),
+            'file_txt'  : skull.files.node(r'K:\# TMP.txt').as_uri(),
+            # Pour tester des requêtes débutants par « file: » !!!
+            # ... et leurs équivalents PATHLIB sont :
+            #'file_root' : pathlib.Path(r'K:\.').as_uri(),
+            #'file_dir'  : pathlib.Path(r'K:\Renato').as_uri(),
+            #'file_txt'  : pathlib.Path(r'K:\# TMP.txt').as_uri(),
             #
         }
 
@@ -7585,14 +8507,24 @@ if __name__ == "__main__":
         # Suivant la façon choisie de parcourir la boucle FOR ci-dessous,
         # nous allons tester toutes les requêtes ou seulement certaines.
         #
-        #keys = url_dict.keys()
-        keys = ('json_do_1', 'git_bnz', 'exple')
-        #keys = ('json_do_a', 'git_bnz', 'exple', 'iana', 'tst_fr')
-        #keys = sorted(('pb_dummy', 'g_403', 'g_403_fox', 'g_404'))
-        #keys = [ k for k in url_dict.keys() if k.startswith('g_') ]
-        #keys = [ k for k in url_dict.keys() if k.startswith('pb_') ]
+        keyrings = {
+            'simple': ('json_do_1', 'git_bnz', 'exple'),
+            'cmplx' : ('json_do_a', 'git_bnz', 'exple', 'iana', 'tst_fr'),
+            'errors': sorted(('pb_dummy', 'g_403', 'g_403_fox', 'g_404')),
+            'google': [k for k in url_dict.keys() if k.startswith('g_')],
+            'pbs'   : [k for k in url_dict.keys() if k.startswith('pb_')],
+            'ftp:'  : [k for k in url_dict.keys() if k.startswith('ftp_')],
+            'file:' : [k for k in url_dict.keys() if k.startswith('file_')],
+            'json'  : [k for k in url_dict.keys() if k.startswith('json_')],
+            'z_all' : url_dict.keys(),
+        }
 
-        for key in keys:
+        skull.shw('Quelle série de REQUÊTES désirez-vous LANCER ?')
+        skull.shw('')
+
+        choice = skull.choose_in_a_dict(keyrings, default_key='simple')
+
+        for key in keyrings[choice]:
 
             url = url_dict[key]
             name = key.upper()
@@ -7610,9 +8542,9 @@ if __name__ == "__main__":
             #coding = coding_unknown
             coding = coding_bytes
 
-            #rep, _, charset = skull.send_request_http(url)
-            #rep, _, _ = skull.send_request_http(url, coding=coding_bytes)
-            rep, chartype, charset = skull.send_request_http(url, coding=coding)
+            #rep, _, charset = skull.send_request_url(url)
+            #rep, _, _ = skull.send_request_url(url, coding=coding_bytes)
+            rep, chartype, charset = skull.send_request_url(url, coding=coding)
 
             if rep != '':
 
@@ -7627,6 +8559,51 @@ if __name__ == "__main__":
                     )
 
                 out_files.append(out)
+
+                if chartype is not None and 'json' in chartype.lower():
+
+                    log.info('Données JSON détectées en sortie.')
+                
+                    # Si l'adresse renvoie des datas au format JSON, nous
+                    # les analysons...
+                    #
+                    # RQ : Il suffit de décommenter la ligne ci-dessous
+                    # pour générer une exception et tester cette branche.
+                    #
+                    #rep = "[1, 2, 3, {'4': 5, '6': 7}, {1.2:3.4}]"
+                    #
+                    json_obj = None
+                    try:
+                        json_obj = json.loads(rep)
+
+                    except json.decoder.JSONDecodeError as e:
+                        log.info('-> ERREUR dans le décodage JSON.')
+                        log.debug(f'-> PB = « {e.doc} »')
+                        log.info("-> Invalid data at :"
+                                 f" Index = {e.pos} \\"
+                                 f" Line = {e.lineno} \\"
+                                 f" Column = {e.colno}.")
+                        log.info(f'-> {e.msg}.')
+
+                    else:
+                        log.info('-> Décodage JSON ok.')
+
+                    if json_obj is not None:
+
+                        # Il suffit de décommenter une ligne ci-dessous
+                        # pour tester la branche « TypeError ».
+                        #
+                        #json_obj = False
+                        #
+                        log.info('-> JSON object type = %s', type(json_obj))
+                        try:
+                            length = len(json_obj)
+
+                        except TypeError:
+                            log.info("-> Result is not a container.")
+
+                        else:
+                            log.info('-> JSON object length = %s', length)
 
             log.info('')
 
