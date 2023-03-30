@@ -8306,6 +8306,7 @@ if __name__ == "__main__":
             'UNC dir no /'  : r'\\machine\mountpoint\directory\etc',
             'UNC root w /'  : r'\\machine\mountpoint' + '\\',
             'UNC root no /' : r'\\machine\mountpoint',
+            'UNC machine/'  : r'\\machine' + '\\',
             'UNC machine'   : r'\\machine',
         }
 
