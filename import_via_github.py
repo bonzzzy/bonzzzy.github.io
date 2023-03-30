@@ -85,7 +85,7 @@ if __name__ == "__main__":
 
                 set_of_chars = skeleton.coding_unknown
 
-            content, _, charset = _my_skeleton.send_request_http(
+            content, _, charset = _my_skeleton.send_request_url(
                 url_src,
                 set_of_chars
                 )
