@@ -499,7 +499,47 @@ def _generator_create(
         yield yield_fct(node)
 
 
-class _Posix:
+class _Flavour(object):
+
+    def __new__(cls):
+
+        new = object.__new__(cls)
+
+        # Pour compatibilité avec _PosixFlavour.splitroot()
+        # et _WindowsFlavour.splitroot(), afin de faciliter
+        # les tests et comparaisons entre skeleton.py et le
+        # module pathlib.
+        #
+        # On utilise le constructeur __new__() de façon peu
+        # orthodoxe, i.e pour s'assurer que dans tout objet
+        # instance d'une classe héritière de _Flavour, nous
+        # trouvions un champ « splitroot ».
+        #
+        # Nous nous assurons par ailleurs que ce champ soit
+        # initialisé à la valeur du champ « split_drv_root »
+        # présent dans l'instance créée...
+        #
+        # De façon plus pythonique, nous aurions probablement
+        # dû créer ici un « initialiseur » ( __init() ) puis,
+        # dans l'initialiseur de chaque classe héritière, on
+        # écrivait :
+        #
+        #   super().__init__()
+        #
+        # Utiliser ce __new__() était une façon plus rapide
+        # de rendre skeleton._Flavour() compatible avec les
+        # objets pathlib._Flavour() !!!
+        #
+        # Au final, le but cherché est que « splitroot » ait
+        # pour valeur la méthode split_drv_root() de l'objet
+        # qui sera créé.
+        #
+        new.splitroot = new.split_drv_root
+
+        return new
+
+
+class _Posix(_Flavour):
     """ DÉFINITION des spécificités d'un OS POSIX.
     ( « Posix flavour » sous pathlib )
 
@@ -544,7 +584,7 @@ class _Posix:
 
     def split_drv_root(
         self,
-        node    # STR [ ou ] FileSystemTree._FileSystemLeaf
+        node    # FileSystemTree._FileSystemLeaf [ ou ] os.PathLike
         ):
         """ Par rapport au module pathlib, ceci est 1 version modifiée
         de sa méthode _PosixFlavour.splitroot().
@@ -556,18 +596,19 @@ class _Posix:
         :param node: le fonctionnement "normal" de skeleton implique que
         « node » soit une instance de FileSystemTree._FileSystemLeaf. Pour
         autant, nous autorisons que ce paramètre soit une STRING, et ceci
-        afin de pouvoir tester directement _Windows.split_drv_root() dans
+        afin de pouvoir tester directement _flavour.split_drv_root() dans
         une fenêtre Python ( IDLE ou autres ).
+
+            Par la suite, on a autorisé que node ne soit pas seulement de
+            type STRING mais plutôt OS.PATHLIKE.
 
         :return: drv, root, relative path
         """
-        
+
         sep = self.path_separator
 
-        if isinstance(node, str):
-            path = node
-        else:
-            path = node.location_string
+        #path = node if isinstance(node, str) else node.location_string
+        path = str(node)
 
         # Sous POSIX pas de DRIVE.
         #
@@ -598,7 +639,7 @@ class _Posix:
             return drv, '', path
 
 
-class _Windows:
+class _Windows(_Flavour):
     """ DÉFINITION des spécificités d'un OS WINDOWS.
     ( « Windows flavour » sous pathlib )
 
@@ -733,7 +774,7 @@ class _Windows:
 
     def split_drv_root(
         self,
-        node    # STR [ ou ] FileSystemTree._FileSystemLeaf
+        node    # FileSystemTree._FileSystemLeaf [ ou ] os.PathLike
         ):
         """ Ceci est une version modifiée et très simplifiée de la
         méthode _WindowsFlavour.splitroot() présente dans le module
@@ -787,18 +828,19 @@ class _Windows:
         :param node: le fonctionnement "normal" de skeleton implique que
         « node » soit une instance de FileSystemTree._FileSystemLeaf. Pour
         autant, nous autorisons que ce paramètre soit une STRING, et ceci
-        afin de pouvoir tester directement _Windows.split_drv_root() dans
+        afin de pouvoir tester directement _flavour.split_drv_root() dans
         une fenêtre Python ( IDLE ou autres ).
+
+            Par la suite, on a autorisé que node ne soit pas seulement de
+            type STRING mais plutôt OS.PATHLIKE.
 
         :return: drv, root, relative path
         """
 
         sep = self.path_separator
 
-        if isinstance(node, str):
-            path = node
-        else:
-            path = node.location_string
+        #path = node if isinstance(node, str) else node.location_string
+        path = str(node)
 
         # Conventions d'affectation de noms :
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -940,6 +982,29 @@ class _Windows:
             #   \\machine\mountpoint\directory\etc\...
             #              directory ^^^^^^^^^^^^^^
             #
+            # For instance, it may be :
+            #
+            #   \\127.0.0.1\c$\temp\test-file.txt
+            #   \\LOCALHOST\c$\temp\test-file.txt
+            #
+            # Que pensez alors d'écritures telles :
+            #
+            #   \\host\     => OK ie path ABSOLU
+            #   \\host      => NO ie path RELATIF
+            #
+            # Ces 2 derniers paths peuvent-ils être considérés comme
+            # ABSOLUS ? Ou ne sont-ils que INCOMPLETS ? En effet, un
+            # path UNC est normalement de la forme \\host\mountpoint,
+            # mais sur le web, de-ci de-là, on trouve des références
+            # à \\localhost ou \\127.0.0.1 dans des cas spécifiques.
+            #
+            # Nous considérons, dans la version « BRUT » de skeleton,
+            # i.e dans les versions qui ne s'appuient pas sur pathlib,
+            # que le 1ER de ces paths est ACCEPTABLE en tant que path
+            # ABSOLU. Le SECOND est, lui, RELATIF.
+            #
+            # Le module pathlib fait d'ailleurs de même...
+            #
             idx = path.find(sep, 2)
             if idx != -1:
 
@@ -1017,7 +1082,9 @@ class _Windows:
 
 
 # Une seule instance de chacune des classes de définition d'un OS suffit,
-# pas besoin d'instancier un de ces objets pour chaque FileSystemTree...
+# pas besoin d'instancier un de ces objets pour chaque FileSystemTree ou,
+# plutôt, pour chaque FileSystemLeaf ( maintenant que la donnée _flavour
+# se trouve dans cette classe et nom plus dans sa sur-classe ).
 #
 _posix = _Posix()
 _windows = _Windows()
@@ -1146,9 +1213,7 @@ class FileSystemTree:
         log_debug("Configuration de la GESTION des FICHIERS :")
         log_debug('==========================================')
 
-        self.flavour = _windows if os.name == 'nt' else _posix
         self.walking_mode = walking_mode
-
         log_debug('\tWALKING MODE\t= ' + str(walking_mode))
 
         self.with_pathlib = with_pathlib
@@ -1457,6 +1522,15 @@ class FileSystemTree:
             """
 
             self.tree = tree
+
+            # Nous avons transféré dans FileSystemLeaf cette donnée
+            # _flavour, afin de correspondre au module pathlib et à
+            # sa structure, et ainsi de faciliter les tests entre ce
+            # module et le duo FileSystemTree / FileSystemLeaf.
+            #
+            # Auparavant, _flavour se trouvait dans FileSystemTree.
+            #
+            self._flavour = _windows if os.name == 'nt' else _posix
 
             # Si nous parcourons un répertoire en utilisant OS.PATH
             # [ cf notre méthode iterdir() ], le ferons-nous via la
@@ -1882,7 +1956,7 @@ class FileSystemTree:
                 # nous n'utilisons que les fonctions de OS.PATH pour
                 # émuler les méthodes de PATHLIB.
                 #
-                drv, root, _ = self.tree.flavour.split_drv_root(self)
+                drv, root, _ = self._flavour.splitroot(self)
 
                 # Si la racine est vide ( '' ), nous ne sommes pas un
                 # path absolu...
@@ -1896,7 +1970,7 @@ class FileSystemTree:
                 # ... si tant est que nous devions en avoir dans le
                 # cas de notre OS !!!
                 #
-                return not self.tree.flavour.has_drv or bool(drv)
+                return not self._flavour.has_drv or bool(drv)
 
 
         def as_posix(self) -> str:
@@ -1926,8 +2000,7 @@ class FileSystemTree:
                 # émuler les méthodes de PATHLIB.
                 #
                 return self.location_string.replace(
-                            self.tree.flavour.path_separator,
-                            '/'
+                            self._flavour.path_separator, '/'
                             )
 
 
@@ -1968,7 +2041,7 @@ class FileSystemTree:
             else:
                 # La construction de notre URI dépend de notre OS.
                 #
-                return self.tree.flavour.make_uri(self)
+                return self._flavour.make_uri(self)
 
 
         def with_name(
@@ -6965,6 +7038,16 @@ class ScriptSkeleton:
         #   https://mybox.airfrance.fr/MyBoxWeb/accueil.do#toRead
         #
 #       '#': '%23',
+        #
+        # Le caractère suivant « $ » permet de donner des indications dans certaines
+        # URL : il ne faudrait donc pas le traduire ??? Ainsi, cf :
+        #
+        #   http://127.0.0.1/c$/Windows/win.ini
+        #
+        # Pour autant, la fonction « quote_from_bytes » du module urllib.parse traduit
+        # ce caractère en %24. Le module pathlib, comme il utilise cette fonction, fait
+        # de même. Donc nous aussi...
+        #
         '$': '%24',
         #
         # Le caractère « % » permet de coder les caractères spéciaux dans les URL :
@@ -7467,6 +7550,7 @@ if __name__ == "__main__":
         node_file = skull.files.node(__file__ + '.test')
 
         skull.shw('\tTOUTES les méthodes de PATHLIB sont alors disponibles.')
+        skull.shw('')
         skull.shw(f'\tpath          = {node_file}')
         skull.shw(f'\tpath.SUFFIXES = {node_file.suffixes}')
         skull.shw(f'\tpath.PARENTS  = {len(list(node_file.parents))}'
@@ -8289,8 +8373,6 @@ if __name__ == "__main__":
         log.info('')
         log.info('')
 
-        f = _windows if os.name == 'nt' else _posix
-
         paths = {
             'relatif no dir': 'Lettres - de Papa à sa Mère.lnk',
             'relatif w dir' : r'Renato\Lettres - de Papa à sa Mère.lnk',
@@ -8306,24 +8388,60 @@ if __name__ == "__main__":
             'UNC dir no /'  : r'\\machine\mountpoint\directory\etc',
             'UNC root w /'  : r'\\machine\mountpoint' + '\\',
             'UNC root no /' : r'\\machine\mountpoint',
-            'UNC machine/'  : r'\\machine' + '\\',
-            'UNC machine'   : r'\\machine',
+            #
+            # les 2 paths suivants peuvent-ils être considérés comme
+            # ABSOLUS ? Ou ne sont-ils que INCOMPLETS ? En effet, un
+            # path UNC est normalement de la forme \\host\mountpoint,
+            # mais sur le web, de-ci de-là, on trouve des références
+            # à \\localhost ou \\127.0.0.1 dans des cas spécifiques.
+            #
+            # Nous considérons, dans la version « BRUT » de skeleton,
+            # i.e dans les versions qui ne s'appuient pas sur pathlib,
+            # que le 1ER de ces paths est ACCEPTABLE en tant que path
+            # ABSOLU. Le SECOND est, lui, RELATIF.
+            #
+            #   \\host\     => OK ie path ABSOLU
+            #   \\host      => NO ie path RELATIF
+            #
+            # Le module pathlib fait d'ailleurs de même...
+            #
+            'UNC host w /'  : r'\\host' + '\\',
+            'UNC host no /' : r'\\host',
+            #
+            # Les paths suivants sont tirés de :
+            #
+            #   https://learn.microsoft.com/en-us/dotnet/standard/io/file-path-formats#example-ways-to-refer-to-the-same-file
+            #
+            'MS classic'    : r"c:\temp\test-file.txt",
+            'MS 127.0.0.1'  : r"\\127.0.0.1\c$\temp\test-file.txt",
+            'MS localhost'  : r"\\LOCALHOST\c$\temp\test-file.txt",
+            'MS extend w .' : r"\\.\c:\temp\test-file.txt",
+            'MS extend w ?' : r"\\?\c:\temp\test-file.txt",
+            'MS UNC lclhst' : r"\\.\UNC\LOCALHOST\c$\temp\test-file.txt",
+            #
+            # Les paths suivants sont tirés de :
+            #
+            #   https://learn.microsoft.com/en-us/dotnet/standard/io/file-path-formats#traditional-dos-paths
+            #
+            'MS trad abs'   : r"C:\Projects\apilibrary\apilibrary.sln",
+            'MS trad rel'   : r"C:Projects\apilibrary\apilibrary.sln",
         }
 
         for k, p in paths.items():
 
+            n = skull.files.node(p)
+
             log.info(f'Répertoire : « {k:^16} » = {p}')
             log.info('~~~~~~~~~~~~')
             log.info('')
-            log.info(f'split_drv_root -> {f.split_drv_root(p)}')
-            log.info('')
+            log.info(f'splitroot\t-> {n._flavour.splitroot(p)}')
 
             try:
-                uri = skull.files.node(p).as_uri()
+                uri = n.as_uri()
             except ValueError:
-                log.info('path.as_uri()  -> « ValueError » car path RELATIF !!!')
+                log.info('path.as_uri()\t-> « ValueError » car path RELATIF !!!')
             else:
-                log.info(f'path.as_uri()  -> {uri}')
+                log.info(f'path.as_uri()\t-> {uri}')
 
             log.info('')
 
@@ -8492,16 +8610,29 @@ if __name__ == "__main__":
             'ftp_err'   : "ftp://ftp.adobe.com/try.tst",
             # Pour tester des requêtes avec le protocole FTP !!!
             #
-            'file_root' : skull.files.node(r'K:\.').as_uri(),
-            'file_dir'  : skull.files.node(r'K:\Renato').as_uri(),
-            'file_txt'  : skull.files.node(r'K:\# TMP.txt').as_uri(),
+        }
+
+        try:
             # Pour tester des requêtes débutants par « file: » !!!
             # ... et leurs équivalents PATHLIB sont :
             #'file_root' : pathlib.Path(r'K:\.').as_uri(),
             #'file_dir'  : pathlib.Path(r'K:\Renato').as_uri(),
             #'file_txt'  : pathlib.Path(r'K:\# TMP.txt').as_uri(),
             #
-        }
+            url_dict['file_root'] = skull.files.node(r'K:\.').as_uri()
+            url_dict['file_dir']  = skull.files.node(r'K:\Renato').as_uri()
+            url_dict['file_txt']  = skull.files.node(r'K:\# TMP.txt').as_uri()
+
+        except ValueError:
+            # Nous sommes ici dans le cas où les path type K:\xxx sont
+            # considérés comme des paths RELATIFS et déclenchent donc
+            # une exception ValueError si on veut les convertir en URI.
+            #
+            # Nous ne sommes donc pas sous Windows mais sous Posix !!!
+            #
+            url_dict['file_root'] = skull.files.node('~/').as_uri()
+            url_dict['file_dir']  = skull.files.node('~/../tmp').as_uri()
+            url_dict['file_txt']  = skull.files.node('~/skeleton.py').as_uri()
 
         model = f'{it_begins_with}_HTML_answer_for_.html'
         out_files = list()
