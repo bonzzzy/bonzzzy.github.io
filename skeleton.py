@@ -584,7 +584,8 @@ class _Posix(_Flavour):
         # We represent the path using the local filesystem
         # encoding, for portability to other applications.
         #
-        bpath = bytes(node.location_string)
+        #bpath = bytes(node)
+        bpath = os.fsencode(str(node))
         return 'file://' + url_from_bytes(bpath)
 
 
