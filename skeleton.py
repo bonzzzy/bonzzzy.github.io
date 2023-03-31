@@ -8406,20 +8406,30 @@ if __name__ == "__main__":
         log.info('')
 
         paths_with_slash = {
-            'relatif no dir': 'Lettres - de Papa à sa Mère.lnk',
-            'relatif w dir' : 'Renato/Lettres - de Papa à sa Mère.lnk',
-            'relatif w /'   : '/Renato/Lettres - de Papa à sa Mère.lnk',
-            'relatif w .'   : './Renato/Lettres - de Papa à sa Mère.lnk',
-            'relatif w ..'  : '../Renato/Lettres - de Papa à sa Mère.lnk',
-            'absolu'        : 'K:/Renato/Lettres - de Papa à sa Mère.lnk',
-            'extend w disk' : '//?/K:/Renato/Lettres - de Papa à sa Mère.lnk',
-            'extend w vol'  : '//./Volume{03b8d832-1552-45a5-827e-cfffa76aa867}/Renato/Lettres - de Papa à sa Mère.lnk',
-            'extend + UNC'  : '//?/UNC/Server/Share/Test/Foo.txt',
-            'UNC file'      : '//machine/mountpoint/directory/etc/Foo.txt',
-            'UNC dir w /'   : '//machine/mountpoint/directory/etc/',
-            'UNC dir no /'  : '//machine/mountpoint/directory/etc',
-            'UNC root w /'  : '//machine/mountpoint/',
-            'UNC root no /' : '//machine/mountpoint',
+            #
+            # Pour WINDOWS : ( principalement )
+            # ~~~~~~~~~~~~~~
+            #
+            # Tests des paths classiques ( relatifs ou absolus ), mais
+            # aussi étendus ou UNC.
+            #
+            'relatif no dir'  : 'Lettres - de Papa à sa Mère.lnk',
+            'dir + relatif'   : 'Renato/Lettres - de Papa à sa Mère.lnk',
+            '/dir + relatif'  : '/Renato/Lettres - de Papa à sa Mère.lnk',
+            '.dir + relatif'  : './Renato/Lettres - de Papa à sa Mère.lnk',
+            '..dir + relatif' : '../Renato/Lettres - de Papa à sa Mère.lnk',
+            'absolu'          : 'K:/Renato/Lettres - de Papa à sa Mère.lnk',
+            'extend w disk'   : '//?/K:/Renato/Lettres - de Papa à sa Mère.lnk',
+            'extend w vol'    : '//./Volume{03b8d832-1552-45a5-827e-cfffa76aa867}/Renato/Lettres - de Papa à sa Mère.lnk',
+            'extend + UNC'    : '//?/UNC/Server/Share/Test/Foo.txt',
+            'UNC file'        : '//machine/mountpoint/directory/etc/Foo.txt',
+            'UNC dir + /'     : '//machine/mountpoint/directory/etc/',
+            'UNC dir - /'     : '//machine/mountpoint/directory/etc',
+            'UNC root + /'    : '//machine/mountpoint/',
+            'UNC root - /'    : '//machine/mountpoint',
+            #
+            # Pour WINDOWS : ( principalement )
+            # ~~~~~~~~~~~~~~
             #
             # les 2 paths suivants peuvent-ils être considérés comme
             # ABSOLUS ? Ou ne sont-ils que INCOMPLETS ? En effet, un
@@ -8437,31 +8447,46 @@ if __name__ == "__main__":
             #
             # Le module pathlib fait d'ailleurs de même...
             #
-            'UNC host w /'  : '//host/',
-            'UNC host no /' : '//host',
+            'UNC host - /'    : '//host',
+            'UNC host + /'    : '//host/',
+            #
+            # Pour POSIX : ( principalement )
+            # ~~~~~~~~~~~~
+            #
+            # Les paths suivants sont-ils tous équivalents ?
+            #
+            # Normalement, oui...
+            #
+            'UNC unix 3 /'    : '///host/',
+            'UNC unix 4 /'    : '////host/',
+            'UNC unix 5 /'    : '/////host/',
+            'UNC unix 6 /'    : '//////host/',
+            #
+            # Pour WINDOWS : ( principalement )
+            # ~~~~~~~~~~~~~~
             #
             # Les paths suivants sont tirés de :
             #
             #   https://learn.microsoft.com/en-us/dotnet/standard/io/file-path-formats#example-ways-to-refer-to-the-same-file
             #
-            'MS classic'    : "c:/temp/test-file.txt",
-            'MS 127.0.0.1'  : "//127.0.0.1/c$/temp/test-file.txt",
-            'MS localhost'  : "//LOCALHOST/c$/temp/test-file.txt",
-            'MS extend w .' : "//./c:/temp/test-file.txt",
-            'MS extend w ?' : "//?/c:/temp/test-file.txt",
-            'MS UNC lclhst' : "//./UNC/LOCALHOST/c$/temp/test-file.txt",
+            'MS classic'      : "c:/temp/test-file.txt",
+            'MS 127.0.0.1'    : "//127.0.0.1/c$/temp/test-file.txt",
+            'MS localhost'    : "//LOCALHOST/c$/temp/test-file.txt",
+            'MS extend w .'   : "//./c:/temp/test-file.txt",
+            'MS extend w ?'   : "//?/c:/temp/test-file.txt",
+            'MS UNC lclhst'   : "//./UNC/LOCALHOST/c$/temp/test-file.txt",
             #
             # Les paths suivants sont tirés de :
             #
             #   https://learn.microsoft.com/en-us/dotnet/standard/io/file-path-formats#traditional-dos-paths
             #
-            'MS trad abs'   : r"C:/Projects/apilibrary/apilibrary.sln",
-            'MS trad rel'   : r"C:Projects/apilibrary/apilibrary.sln",
+            'MS trad abs'     : r"C:/Projects/apilibrary/apilibrary.sln",
+            'MS trad rel'     : r"C:Projects/apilibrary/apilibrary.sln",
         }
 
         paths = paths_with_slash if os.name != 'nt' else {
-            k.replace('/', '\\'):
-            v.replace('/', '\\')
+            k.replace('/', '\\')
+            : v.replace('/', '\\')
             for k, v in paths_with_slash.items()
         }
 
