@@ -581,11 +581,36 @@ class _Posix(_Flavour):
         """ Return the path as a 'file' URI.
         """
 
-        # We represent the path using the local filesystem
-        # encoding, for portability to other applications.
+        # Sous Posix, ...
+        #
+        # « we represent the path using the local filesystem
+        # encoding, for portability to other applications »
+        #
+        # ... mais, puisque nous n'avons pas écrit de méthode
+        # __bytes__() pour notre classe FileSystemLeaf ( au
+        # contraire de ce qui existe pour la classe Path du
+        # module pathlib ), nous lançons alors directement
+        # « os.fsencode() » ici.
+        #
+        # En effet, par ailleurs, si nous exécutions :
+        #
+        #   « bytes(node.location_string) »
+        #
+        # ... Python planterait car, dans le cas d'1 paramètre
+        # STRING, bytes() nécessite 2 paramètres en plus :
+        #
+        #   class bytes(source, encoding, errors)
+        #
+        #   If the source is a string, then we must compulsorily
+        #   pass the other 2 parameters. If not, then the Python
+        #   interpreter will return TypeError.
+        #
+        #   Cf https://www.toppr.com/guides/python-guide/references/methods-and-functions/methods/built-in/bytes/python-bytes/
         #
         #bpath = bytes(node)
+        #bpath = bytes(node.location_string)
         bpath = os.fsencode(str(node))
+
         return 'file://' + url_from_bytes(bpath)
 
 
@@ -617,7 +642,7 @@ class _Posix(_Flavour):
         #path = node if isinstance(node, str) else node.location_string
         path = str(node)
 
-        # Sous POSIX pas de DRIVE.
+        # Sous POSIX, pas de DRIVE.
         #
         drv = ''
 
@@ -8380,21 +8405,21 @@ if __name__ == "__main__":
         log.info('')
         log.info('')
 
-        paths = {
+        paths_with_slash = {
             'relatif no dir': 'Lettres - de Papa à sa Mère.lnk',
-            'relatif w dir' : r'Renato\Lettres - de Papa à sa Mère.lnk',
-            'relatif w /'   : r'\Renato\Lettres - de Papa à sa Mère.lnk',
-            'relatif w .'   : r'.\Renato\Lettres - de Papa à sa Mère.lnk',
-            'relatif w ..'  : r'..\Renato\Lettres - de Papa à sa Mère.lnk',
-            'absolu'        : r'K:\Renato\Lettres - de Papa à sa Mère.lnk',
-            'extend w disk' : r'\\?\K:\Renato\Lettres - de Papa à sa Mère.lnk',
-            'extend w vol'  : r'\\.\Volume{03b8d832-1552-45a5-827e-cfffa76aa867}\Renato\Lettres - de Papa à sa Mère.lnk',
-            'extend + UNC'  : r'\\?\UNC\Server\Share\Test\Foo.txt',
-            'UNC file'      : r'\\machine\mountpoint\directory\etc\Foo.txt',
-            'UNC dir w /'   : r'\\machine\mountpoint\directory\etc' + '\\',
-            'UNC dir no /'  : r'\\machine\mountpoint\directory\etc',
-            'UNC root w /'  : r'\\machine\mountpoint' + '\\',
-            'UNC root no /' : r'\\machine\mountpoint',
+            'relatif w dir' : 'Renato/Lettres - de Papa à sa Mère.lnk',
+            'relatif w /'   : '/Renato/Lettres - de Papa à sa Mère.lnk',
+            'relatif w .'   : './Renato/Lettres - de Papa à sa Mère.lnk',
+            'relatif w ..'  : '../Renato/Lettres - de Papa à sa Mère.lnk',
+            'absolu'        : 'K:/Renato/Lettres - de Papa à sa Mère.lnk',
+            'extend w disk' : '//?/K:/Renato/Lettres - de Papa à sa Mère.lnk',
+            'extend w vol'  : '//./Volume{03b8d832-1552-45a5-827e-cfffa76aa867}/Renato/Lettres - de Papa à sa Mère.lnk',
+            'extend + UNC'  : '//?/UNC/Server/Share/Test/Foo.txt',
+            'UNC file'      : '//machine/mountpoint/directory/etc/Foo.txt',
+            'UNC dir w /'   : '//machine/mountpoint/directory/etc/',
+            'UNC dir no /'  : '//machine/mountpoint/directory/etc',
+            'UNC root w /'  : '//machine/mountpoint/',
+            'UNC root no /' : '//machine/mountpoint',
             #
             # les 2 paths suivants peuvent-ils être considérés comme
             # ABSOLUS ? Ou ne sont-ils que INCOMPLETS ? En effet, un
@@ -8412,26 +8437,32 @@ if __name__ == "__main__":
             #
             # Le module pathlib fait d'ailleurs de même...
             #
-            'UNC host w /'  : r'\\host' + '\\',
-            'UNC host no /' : r'\\host',
+            'UNC host w /'  : '//host/',
+            'UNC host no /' : '//host',
             #
             # Les paths suivants sont tirés de :
             #
             #   https://learn.microsoft.com/en-us/dotnet/standard/io/file-path-formats#example-ways-to-refer-to-the-same-file
             #
-            'MS classic'    : r"c:\temp\test-file.txt",
-            'MS 127.0.0.1'  : r"\\127.0.0.1\c$\temp\test-file.txt",
-            'MS localhost'  : r"\\LOCALHOST\c$\temp\test-file.txt",
-            'MS extend w .' : r"\\.\c:\temp\test-file.txt",
-            'MS extend w ?' : r"\\?\c:\temp\test-file.txt",
-            'MS UNC lclhst' : r"\\.\UNC\LOCALHOST\c$\temp\test-file.txt",
+            'MS classic'    : "c:/temp/test-file.txt",
+            'MS 127.0.0.1'  : "//127.0.0.1/c$/temp/test-file.txt",
+            'MS localhost'  : "//LOCALHOST/c$/temp/test-file.txt",
+            'MS extend w .' : "//./c:/temp/test-file.txt",
+            'MS extend w ?' : "//?/c:/temp/test-file.txt",
+            'MS UNC lclhst' : "//./UNC/LOCALHOST/c$/temp/test-file.txt",
             #
             # Les paths suivants sont tirés de :
             #
             #   https://learn.microsoft.com/en-us/dotnet/standard/io/file-path-formats#traditional-dos-paths
             #
-            'MS trad abs'   : r"C:\Projects\apilibrary\apilibrary.sln",
-            'MS trad rel'   : r"C:Projects\apilibrary\apilibrary.sln",
+            'MS trad abs'   : r"C:/Projects/apilibrary/apilibrary.sln",
+            'MS trad rel'   : r"C:Projects/apilibrary/apilibrary.sln",
+        }
+
+        paths = paths_with_slash if os.name != 'nt' else {
+            k.replace('/', '\\'):
+            v.replace('/', '\\')
+            for k, v in paths_with_slash.items()
         }
 
         for k, p in paths.items():
