@@ -526,9 +526,15 @@ class _Flavour(object):
         #
         #   super().__init__()
         #
+        # ... puisque __init__() des classes filles remplace
+        # / surcharge celle de la classe parente.
+        #
         # Utiliser ce __new__() était une façon plus rapide
         # de rendre skeleton._Flavour() compatible avec les
-        # objets pathlib._Flavour() !!!
+        # objets pathlib._Flavour() !! Avec peu de modifs à
+        # écrire, et peu de chance qu'une des classes filles
+        # ait besoin d'utiliser __new__(), et donc surcharge
+        # cette méthode.
         #
         # Au final, le but cherché est que « splitroot » ait
         # pour valeur la méthode split_drv_root() de l'objet
@@ -7545,9 +7551,11 @@ if __name__ == "__main__":
         with_glob = w_glob
         )
 
+    leaf = skull.files.node
+
     if (w_pathlib == pathlib_direct):
 
-        node_file = skull.files.node(__file__ + '.test')
+        node_file = leaf(__file__ + '.test')
 
         skull.shw('\tTOUTES les méthodes de PATHLIB sont alors disponibles.')
         skull.shw('')
@@ -7601,7 +7609,7 @@ if __name__ == "__main__":
         try: fnmatch.translate('test_if*already_imported')
         except AttributeError: import fnmatch
 
-        our_dir = skull.files.node().iterdir
+        our_dir = leaf().iterdir
         our_lst = [n for n in our_dir() if fnmatch.fnmatch(n.name, mask)]
 
         if len(our_lst) > 0:
@@ -7691,8 +7699,6 @@ if __name__ == "__main__":
         log.info('\t==============================')
         log.info('')
         log.info('')
-
-        leaf = skull.files.node
 
         skull.shw('EXEMPLE 1 : Opérateur « / » + Opérandes « FileSystelLeaf » et « STRING »')
         skull.shw('')
@@ -7818,7 +7824,7 @@ if __name__ == "__main__":
                 _glob_only_files: 'FICHIERS'
             }
 
-            our_dir = skull.files.node()
+            our_dir = leaf()
 
             for t in (_glob_only_dirs, _glob_only_files):
 
@@ -8306,7 +8312,7 @@ if __name__ == "__main__":
         skull.shw(f'Création de « {f_tmp} »')
         skull.shw('')
 
-        skull.files.node(f_tmp).touch()
+        leaf(f_tmp).touch()
 
         skull.shw(f'Prochain nom après « {f_tmp} » ...')
         skull.shw('')
@@ -8328,13 +8334,13 @@ if __name__ == "__main__":
         skull.shw(f'Création de « {f_tmp} »')
         skull.shw('')
 
-        skull.files.node(f_tmp).touch()
+        leaf(f_tmp).touch()
 
         skull.shw(f'Re-Création de « {f_tmp} »')
         skull.shw('')
 
         try:
-            skull.files.node(f_tmp).touch()
+            leaf(f_tmp).touch()
 
         except FileExistsError:
             skull.shw(f'\tINTERDITE CAR CE FICHIER EXISTE !!!')
@@ -8429,7 +8435,7 @@ if __name__ == "__main__":
 
         for k, p in paths.items():
 
-            n = skull.files.node(p)
+            n = leaf(p)
 
             log.info(f'Répertoire : « {k:^16} » = {p}')
             log.info('~~~~~~~~~~~~')
@@ -8619,9 +8625,9 @@ if __name__ == "__main__":
             #'file_dir'  : pathlib.Path(r'K:\Renato').as_uri(),
             #'file_txt'  : pathlib.Path(r'K:\# TMP.txt').as_uri(),
             #
-            url_dict['file_root'] = skull.files.node(r'K:\.').as_uri()
-            url_dict['file_dir']  = skull.files.node(r'K:\Renato').as_uri()
-            url_dict['file_txt']  = skull.files.node(r'K:\# TMP.txt').as_uri()
+            url_dict['file_root'] = leaf(r'K:\.').as_uri()
+            url_dict['file_dir']  = leaf(r'K:\Renato').as_uri()
+            url_dict['file_txt']  = leaf(r'K:\# TMP.txt').as_uri()
 
         except ValueError:
             # Nous sommes ici dans le cas où les path type K:\xxx sont
@@ -8630,9 +8636,10 @@ if __name__ == "__main__":
             #
             # Nous ne sommes donc pas sous Windows mais sous Posix !!!
             #
-            url_dict['file_root'] = skull.files.node('~/').as_uri()
-            url_dict['file_dir']  = skull.files.node('~/../tmp').as_uri()
-            url_dict['file_txt']  = skull.files.node('~/skeleton.py').as_uri()
+            u = skull.files.home()
+            url_dict['file_root'] = u.as_uri()
+            url_dict['file_dir']  = leaf(u / '..' / 'tmp').as_uri()
+            url_dict['file_txt']  = leaf(u / 'skeleton.py').as_uri()
 
         model = f'{it_begins_with}_HTML_answer_for_.html'
         out_files = list()
