@@ -73,20 +73,33 @@ glob = None
 # script renverront des valeurs de type PATHLIB.PATH en tant que paths, sinon
 # ces valeurs seront de type STRING !!!
 #
-# Il font donc être prêt à gérer ces 2 types de valeurs lorsque nous traitons
-# des paths ( d'autant plus dans le cas du mode « pathlib_direct » ), SAUF si
-# nous ne demandons jamais à ce que la librairie PATHLIB soit utilisée.
+# Il faut donc être prêt à gérer ces 2 types de valeurs lorsque nous traitons
+# des paths ( surtout dans le cas des modes « pathlib_direct_... » ), SAUF si
+# nous ne demandons jamais à ce que PATHLIB soit utilisé.
 #
 pathlib_ignore = None
-pathlib_direct = 'pathlib_direct'
 pathlib_deeply = 'pathlib_embedded'
+
+pathlib_direct_via_path_method = 'pathlib_direct_via_Path_METHOD'
+pathlib_direct_via_path_class  = 'pathlib_direct_via_Path_CLASS'
+pathlib_direct_via_module_only = 'pathlib_direct_via_MODULE'
+
+pathlib_direct = set((
+    pathlib_direct_via_path_method,
+    pathlib_direct_via_path_class,
+    pathlib_direct_via_module_only
+))
+
+pathlib_import = pathlib_direct | set((pathlib_deeply,))
 
 # Quel comportement vis-à-vis du module PATHLIB notre ScriptSkeleton va-t-il
 # utiliser par défaut ?
 #
 ___dflt_pathlib___ = pathlib_ignore
 #___dflt_pathlib___ = pathlib_deeply
-#___dflt_pathlib___ = pathlib_direct
+#___dflt_pathlib___ = pathlib_direct_via_path_method
+#___dflt_pathlib___ = pathlib_direct_via_path_class
+#___dflt_pathlib___ = pathlib_direct_via_module_only
 
 # Si nous parcourons un répertoire en utilisant le module OS.PATH, le ferons
 # -nous via la la fonction os.listdir() ou via os.scandir() ?
@@ -540,6 +553,7 @@ class _Flavour(object):
         # pour valeur la méthode split_drv_root() de l'objet
         # qui sera créé.
         #
+        new.join = new.path_separator.join
         new.splitroot = new.split_drv_root
 
         return new
@@ -567,11 +581,21 @@ class _Posix(_Flavour):
     # interpreted in an implementation-defined manner, although more
     # than two leading slashes shall be treated as a single slash".
     #
+
+
+    # INITIALISATION des ATTRIBUTS de CLASSE :
+    #
+    has_drv = False
+    path_separator = '/'
+    is_supported = (os.name != 'nt')
+
+
     def __init__(self):
 
-        self.has_drv = False
-        self.path_separator = '/'
-        self.is_supported = (os.name != 'nt')
+        # Pour l'instant, nous n'avons que des attributs de
+        # classe, et aucun attributs d'instance...
+        #
+        pass
 
 
     def make_uri(
@@ -759,20 +783,30 @@ class _Windows(_Flavour):
     #       {'LPT%s' % c for c in '123456789\xb9\xb2\xb3'}
     #       )
     #
+ 
+
+    # INITIALISATION des ATTRIBUTS de CLASSE :
+    #
+    has_drv = True
+    path_separator = '\\'
+    is_supported = (os.name == 'nt')
+
+    lst_extended_prefix = [
+        '\\\\?\\',
+        '\\\\.\\',
+        ]
+
+    drive_letters = set(
+        'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
+        )
+
+
     def __init__(self):
 
-        self.has_drv = True
-        self.path_separator = '\\'
-        self.is_supported = (os.name == 'nt')
-
-        self.lst_extended_prefix = [
-            '\\\\?\\',
-            '\\\\.\\',
-            ]
-
-        self.drive_letters = set(
-            'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
-            )
+        # Pour l'instant, nous n'avons que des attributs de
+        # classe, et aucun attributs d'instance...
+        #
+        pass
 
 
     def make_uri(
@@ -1160,15 +1194,15 @@ class FileSystemTree:
     de fichiers ) des valeurs type PATHLIB.PATH, sinon ces mêmes
     valeurs seront de type STRING !!!
 
-        Il font donc être prêt à gérer ces deux types de valeurs
-        lorsque nous traitons des path ( d'autant plus si notre
-        mode est « pathlib_direct » ), SAUF si nous ne demandons
-        pas à ce que la librairie PATHLIB soit utilisée.
+        Il faut donc être prêt à gérer ces deux types de valeurs
+        lorsque nous traitons des paths ( d'autant plus si notre
+        mode est du type « pathlib_direct_... » ), SAUF si nous
+        ne demandons jamais à ce que PATHLIB soit utilisé.
 
-    ATTENTION : Si l'import direct de PATHLIB est demandé ( mode
-    « pathlib_direct » ), toute fonction fournie par PATHLIB sera
-    accessible, même si non déclarées / surchargées dans la classe
-    incluse _FileSystemLeaf !!!
+    ATTENTION : Si l'import direct de PATHLIB est demandé via les
+    modes type « pathlib_direct_... », toute fonction fournie par
+    PATHLIB sera accessible, même si non déclarées / surchargées
+    dans la classe incluse _FileSystemLeaf.
 
         En effet, si l'on travaille de façon directe avec le module
         PATHLIB, alors FileSystemTree.node() renvoie directement un
@@ -1178,10 +1212,94 @@ class FileSystemTree:
 
         Toutes les fonctions PATHLIB sont alors disponibles, en tout
         cas pour celles au niveau d'une instance ( ie du même niveau
-        que nos objets _FileSystemLeaf ). Pour les méthodes de classe
-        ( telles cwd(), home(), ... ), elles doivent être codées au
-        niveau de notre classe FileSystemTree.
+        que nos objets _FileSystemLeaf ).
+
+        Pour les méthodes de classe ( cwd(), home() & autres ), elles
+        doivent être codées au niveau de la classe FileSystemTree...
+
+        ... SAUF dans le mode « pathlib_direct_via_module_only », cas
+        où aucun objet FileSystemTree n'est créé : FileSystemTree, là,
+        n'est rien d'autre qu'un ALIAS vers le module PATHLIB !!!
     """
+
+    def __new__(
+        cls,
+        *args,
+        log_file: logging.Logger = None,
+        with_pathlib: str = pathlib_ignore,
+        **kwargs
+        ):
+        """ CONSTRUCTEUR de la classe FileSystemTree.
+        """
+
+        write_in_log = _show_ if log_file is None else log_file.debug
+        write_in_log("Type de GESTION des FICHIERS :")
+        write_in_log('==============================')
+
+
+        # Nous allons dès maintenant importer le module pathlib
+        # si nécessaire. En effet, si nous ne créons pas ici d'
+        # objet FileSystemTree, nous allons renvoyer l'adresse
+        # de ce module pathlib, IL FAUT DONC QU'ELLE EXISTE !!!
+        #
+        if with_pathlib in pathlib_import:
+
+            # Puisque nous avons défini une variable globale du
+            # nom de pathlib, écrire simplement :
+            #
+            #   try: pathlib
+            #   except NameError: import pathlib
+            #
+            # ... ne permettra pas d'importer le module pathlib
+            # puisque « try: pathlib » ne lèvera pas d'exception
+            # ( la variable pathlib existe déjà... ).
+            #
+            global pathlib
+            try: pathlib.PurePath()
+            except AttributeError: import pathlib
+
+
+        # Devons nous ( ou non ) créer un objet FileSystemTree ?
+        #
+        if with_pathlib == pathlib_direct_via_module_only:
+
+            # Cas du mode « pathlib_direct_via_MODULE » :
+            # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            #
+            # Ici, nous n'allons pas même créer d'objet, afin
+            # de shunter complètement notre gestion des disques
+            # et fichiers, et de la confier au module PATHLIB.
+            #
+            # C'est pathlib qui réalisera tout !
+            #
+            # Dans ce cas, TOUTES les fonctions PATHLIB sont
+            # alors disponibles, autant pour celles au niveau
+            # d'une instance de l'objet pathlib.Path() que pour
+            # les fonctions au niveau du module lui-même ( cwd(),
+            # home() & autres ).
+            #
+            # FileSystemTree, ici, n'est rien d'autre qu'un ALIAS
+            # vers le module PATHLIB !!!
+            #
+            write_in_log("\tAucune instanciation de la classe FileSystemTree...")
+            write_in_log("\t« pathlib » gèrera seul le système de fichiers !!!")
+            write_in_log('')
+
+            return pathlib
+
+        else:
+
+            # Création d'un objet FileSystemTree dans les autres cas :
+            # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            #
+            # Nous créons un objet FileSystemTree qui sera en
+            # charge de la gestion des disques et fichiers.
+            #
+            write_in_log("\tNous créons un objet FileSystemTree.")
+            write_in_log('')
+
+            return object.__new__(cls)
+
 
     def __init__(
         self,
@@ -1189,9 +1307,10 @@ class FileSystemTree:
         with_pathlib: str = pathlib_ignore,
         with_fnmatch: bool = False,
         with_glob: bool = False,
-        log: logging.Logger = None
+        log_file: logging.Logger = None
         ):
-        """
+        """ INITIALISEUR de la classe FileSystemTree.
+
         :param walking_mode: si cet objet n'utilise que le module
         OS.PATH, pour parcourir 1 répertoire utilisera-t-il la fct
         os.listdir() ou os.scandir() ?
@@ -1218,9 +1337,10 @@ class FileSystemTree:
             * pathlib_ignore ( None ) : nous n'utiliserons pas le
             module PATHLIB.
 
-            * pathlib_direct : nous utiliserons le module PATHLIB &
-            notre méthode FileSystemTree.node() renverra directement
-            des objets de type pathlib.Path, sans filtre.
+            * pathlib_direct_... : nous utiliserons le module PATHLIB
+            et la méthode FileSystemTree.node() renverra directement
+            des objets de type pathlib.Path, sans filtre, voire aucun
+            objet FileSystemTree ne sera même créé.
 
             * pathlib_deeply : nous utiliserons le module PATHLIB &
             notre méthode FileSystemTree.node() renverra des objets
@@ -1231,12 +1351,16 @@ class FileSystemTree:
 
         :param with_glob: cet objet peut-t-il utiliser GLOB ?
 
-        :param log: identifiant d'un fichier de journalisation des
-        messages, s'il en existe un.
+        :param log_file: identifiant d'un fichier de journalisation
+        des messages, s'il en existe un.
         """
 
+        # Si nous n'initialisons pas self.write_in_log, Python va
+        # planter dans l'appel à self.register_log(), en invoquant
+        # que « self » n'a pas d'attribut « write_in_log » !!!
+        #
         self.write_in_log = None
-        self.register_log(log)
+        self.register_log(log_file)
         log_debug = self.write_in_log
 
         # On importe les modules PATHLIB, FNMATCH et GLOB si tel
@@ -1244,31 +1368,39 @@ class FileSystemTree:
         #
         log_debug("Configuration de la GESTION des FICHIERS :")
         log_debug('==========================================')
+        log_debug('\tWALKING MODE\t= ' + str(walking_mode))
+        log_debug('\tPATHLIB\t\t= ' + str(pathlib))
 
         self.walking_mode = walking_mode
-        log_debug('\tWALKING MODE\t= ' + str(walking_mode))
-
         self.with_pathlib = with_pathlib
-        self.pathlib_import = not (with_pathlib == pathlib_ignore)
-        self.pathlib_direct = (with_pathlib == pathlib_direct)
-        if self.pathlib_import:
 
-            # Puisque nous avons défini une variable globale du
-            # nom de pathlib, écrire simplement :
-            #
-            #   try: pathlib
-            #   except NameError: import pathlib
-            #
-            # ... ne permettra pas d'importer le module pathlib
-            # puisque « try: pathlib » ne lèvera pas d'exception
-            # ( la variable pathlib existe déjà... ).
-            #
-            global pathlib
-            try: pathlib.PurePath()
-            except AttributeError: import pathlib
+        #self.pathlib_direct = (with_pathlib == pathlib_direct)
+        #self.pathlib_import = not (with_pathlib == pathlib_ignore)
+        self.pathlib_direct = with_pathlib in pathlib_direct
+        self.pathlib_import = with_pathlib in pathlib_import
 
-        else:
+        if with_pathlib == pathlib_direct_via_path_class:
 
+            # Cas du mode « pathlib_direct_via_Path_CLASS » :
+            # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            #
+            # Ici, nous SURCHARGEONS même notre méthode PATH,
+            # afin de la shunter complètement et de déléguer
+            # la création des objets chargés de représenter
+            # les disques ou les fichiers.
+            #
+            # C'est pathlib.Path qui réalisera ces créations.
+            #
+                log_debug('')
+                log_debug('\tNous SURCHARGEONS notre méthode PATH !')
+                log_debug('')
+                self.Path = pathlib.Path
+
+        if not self.pathlib_import:
+
+            # Cas où nous allons SIMULER le MODULE PATHLIB :
+            # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            #
             # Pour simuler la fonction pathlib.Path().as_uri(),
             # nous aurons besoin, tout comme le module pathlib,
             # de la fonct° « quote_from_bytes » issue du module
@@ -1276,8 +1408,6 @@ class FileSystemTree:
             #
             global url_from_bytes
             from urllib.parse import quote_from_bytes as url_from_bytes
-
-        log_debug('\tPATHLIB\t\t= ' + str(pathlib))
 
         self.with_fnmatch = with_fnmatch
         if with_fnmatch:
@@ -1380,19 +1510,23 @@ class FileSystemTree:
             return self._FileSystemLeaf(self, os.path.expanduser('~'))
 
 
-    def node(
+    #def node ||-> Pour compatibilité avec pathlib, node est devenu Path.
+    def Path(
         self,
-        location = None     # _FileSystemLeaf [ ou ] os.PathLike
+        #location = None    # _FileSystemLeaf [ ou ] os.PathLike
+        *args               # liste(_FileSystemLeaf [ ou ] os.PathLike)
         ) -> object:
         # -> _FileSystemLeaf [ ou ] PATHLIB.PATH
         """ Pour créer un objet de GESTION d'un NOEUD du système
         de fichiers ( fichiers ou répertoires ), afin de pouvoir
         accéder à ce noeud et / ou le manipuler.
 
-        Si nous sommes en mode « pathlib_direct », cette méthode
-        renverra 1 objet de type « pathlib.Path » & notre classe
-        interne _FileSystemLeaf ne sera donc pas utilisée pour la
-        gestion du système de fichiers.
+        Si nous sommes en mode « pathlib_direct_via_path_method »,
+        cette méthode renverra 1 objet de type « pathlib.Path » &
+        notre classe interne _FileSystemLeaf ne sera donc même pas
+        utilisée pour la gestion du système de fichiers. Dans les
+        autres modes « pathlib_direct_... », nous ne passerons pas
+        même via cette méthode de FileSystemTree !!!
 
         Dans tous les autres cas, _FileSystemLeaf sera l'objet qui
         permettra d'accéder au noeud défini par « location ». Cet
@@ -1416,15 +1550,14 @@ class FileSystemTree:
         « _FileSystemLeaf ». Dans ce dernier cas, notre fonction
         node() renverra l'objet « _FileSystemLeaf » lui-même !!!
 
+            La localisation est dorénavant possiblement définie
+            par une liste de parties d'un path ( *ARGS )...
+
+            En effet, le module pathlib autorise cette option.
+
         :param return: l'objet pour GESTION du répertoire ou du
         fichier sous-jacent.
         """
-
-        # Si aucune localisation n'est indiquée, nous considérons
-        # qu'il s'agit du répertoire courant.
-        #        
-        if location is None or str(location) == '':
-            location = '.'
 
         # Si l'on travaille en direct avec le module PATHLIB, alors
         # on renvoie l'objet PATHLIB créé, ce qui va shunter notre
@@ -1440,7 +1573,8 @@ class FileSystemTree:
         #
         #   https://docs.python.org/fr/3/library/pathlib.html
         #
-        if self.pathlib_direct: 
+        if self.pathlib_direct:
+
             # Dans ce cas, « location » est obligatoirement du type
             # « os.PathLike », car les objets « _FileSystemLeaf »
             # sont shuntés et ne sont jamais créés.
@@ -1448,13 +1582,21 @@ class FileSystemTree:
             # On peut donc donner directement « location » comme
             # information à pathlib.Path().
             #
-            return pathlib.Path(location)
+            #return pathlib.Path(location)
+            return pathlib.Path(*args)
 
-        # Si la localisation est déjà un objet _FileSystemLeaf,
-        # alors il n'y a aucune transformation à faire !!!
+
+        # Si la localisation est déjà un objet _FileSystemLeaf, alors
+        # il n'y a aucune transformation à faire !!!
         #
-        elif isinstance(location, FileSystemTree._FileSystemLeaf):
-            return location
+        # DEPUIS QUE LA LOCALISATION EST POSSIBLEMENT DÉFINIE PAR UNE
+        # LISTE DE PARTIES D'UN PATH ( *args ), LE TRAITEMENT DU CAS
+        # CI-DESSOUS A ÉTÉ TRANSFÉRÉ VERS LA MÉTHODE __INIT__() DE LA
+        # CLASSE _FileSystemLeaf...
+        #
+        #elif isinstance(location, FileSystemTree._FileSystemLeaf):
+        #    return location
+
 
         # Nous créons sinon un objet _FileSystemLeaf, dont la tâche
         # sera d'encapsuler le module OS.PATH ou le module PATHLIB.
@@ -1465,7 +1607,9 @@ class FileSystemTree:
         # présentes parmi les méthodes de _FileSystemLeaf ).
         #
         else:
-            return self._FileSystemLeaf(self, location)
+
+            #return self._FileSystemLeaf(self, location)
+            return self._FileSystemLeaf(self, *args)
 
 
     class _FileSystemLeaf:
@@ -1474,7 +1618,7 @@ class FileSystemTree:
         fichiers. Cet objet appelle la fonction adéquate du module
         sous-jacent ( OS.PATH ou PATHLIB ).
 
-        ATTENTION : Lorsque nous sommes en mode « pathlib_direct »,
+        ATTENTION : Si nous sommes en mode « pathlib_direct_... »,
         cette classe n'est pas utilisée pour la gestion du système
         de fichiers. FileSystemTree ne manipulera que des objets du
         type « pathlib.Path ».
@@ -1534,7 +1678,8 @@ class FileSystemTree:
         def __init__(
             self,
             tree: object,
-            location: os.PathLike
+            #location: os.PathLike
+            *args       # liste(_FileSystemLeaf [ ou ] os.PathLike)
             ):
             """
             :param tree: l'objet FileSystemTree dont nous dépendons.
@@ -1551,6 +1696,11 @@ class FileSystemTree:
                 mais pas pour l'inverse. Or nous travaillons aussi,
                 entre autres, sur iPad + iOS, où « \ » ne sera pas
                 compris comme séparateur de PATH...
+
+                La localisation est dorénavant possiblement définie
+                par une liste de parties d'un path ( *ARGS )...
+
+                En effet, le module pathlib autorise cette option.
             """
 
             self.tree = tree
@@ -1569,6 +1719,92 @@ class FileSystemTree:
             # la fonction os.listdir() ou via os.scandir() ?
             #
             self.walking_mode = tree.walking_mode
+
+            # Si aucune localisation n'est indiquée, nous considérons
+            # qu'il s'agit du répertoire courant.
+            #
+            if args is None or len(args) == 0:
+                location = '.'
+
+            # Si la localisation tient en 1 seul paramètre, le cas est
+            # simple. Et l'on peut conserver cet argument sous sa forme
+            # première ( il n'est converti en STR que pour un test mais
+            # transmis ensuite tel quel au reste des traitements ).
+            #
+            elif len(args) == 1:
+                first = args[0]
+                location = '.' if str(first) == '' else first
+
+            # Si la localisation est décrite en plusieurs parties, il
+            # faut les assembler !
+            #
+            # HISTORIQUE : Traitements antérieurs
+            # ~~~~~~~~~~~~
+            #
+            # Nous considèrions que le type des parties est défini par
+            # le type de la première de celles-ci...
+            #
+            #   elif isinstance(args[0], str):
+            #       location = self._flavour.join(args)
+            #
+            #   elif isinstance(args[0], FileSystemTree._FileSystemLeaf):
+            #       location = args[0]
+            #       for p in args[1:]:
+            #           location /= p
+            #
+            #   elif tree.pathlib_import and isinstance(args[0], pathlib.PurePath):
+            #       location = pathlib.Path._from_parts(args)
+            #
+            #       RQ: _from_parts() accepte 1 liste d'objets du type
+            #       « str or os.PathLike » ( cf la méthode _parse_args
+            #       du même module ).
+            #
+            # Or, d'une part, dans le dernier cas, nous appelions une
+            # « @classmethod » interne au module pathlib.PurePath, ce
+            # qui n'est pas très propre donc...
+            #
+            # Nous aurions pu sinon, comme dans le cas des objets de
+            # type FileSystemTree._FileSystemLeaf, utiliser 1 boucle
+            # avec l'opérateur « /= » qui est aussi défini pour les
+            # objets pathlib.Path.
+            #
+            # Mais, là, nous avons le RISQUE d'entrer dans 1 boucle
+            # récursive infinie... puisque l'opérateur « /= » crée
+            # lui-même un objet _FileSystemLeaf !!!
+            #
+            #   La récursion n'est d'ailleurs pas une solution super
+            #   efficace, autant en temps de traitement qu'en espace
+            #   mémoire utilisé...
+            #
+            # Enfin, nous n'étions par du tout à l'abri d'un mélange
+            # d'objets STR, pathlib.PATH et _FileSystemLeaf dans la
+            # liste ARGS : nous courrions alors droit au PLANTAGE.
+            #
+            # BREF, nous avons choisi la solution de sécurité et la
+            # plus efficace : convertir TOUS les ARGS sous forme de
+            # STRING, via la fonction map().
+            #
+            #   C'est d'ailleurs la solution choisie par le module
+            #   pathlib. Cf la méthode PurePath._parse_args où tout
+            #   est ramené à des STR :
+            #
+            #       if isinstance(a, PurePath):
+            #           parts += a._parts
+            #       else:
+            #           a = os.fspath(a)
+            #           if isinstance(a, str):
+            #               # Force-cast str subclasses to str (issue #21127)
+            #               parts.append(str(a))
+            #
+            else:
+                try:
+                    args_str = map(str, args)
+                    location = self._flavour.join(args_str)
+
+                except TypeError:
+                    raise TypeError(
+                        "Unknown list of path parts : {}".format(args)
+                        )
 
             # Cf https://docs.python.org/3/library/os.html#os.fspath
             #
@@ -1597,6 +1833,14 @@ class FileSystemTree:
             # Bref, nous mettons ceinture & bretelles pour nous assurer
             # que le path indiqué soit bien compris !!!
             #
+            # Ainsi, mettons que l'on ait :
+            #
+            #   >>> location = '\\'.join(('C:\\', '//', 'Voici', '\\un/', '\\\\\\', 'test/'))
+            #   >>> location
+            #       'C:\\\\//\\Voici\\\\un/\\\\\\\\\\test/'
+            #   >>> os.path.normpath(location)
+            #       'C:\\Voici\\un\\test'
+            #
             location = os.path.normpath(os.fspath(location))
 
             # Quel que soit le type de « location » ( pathlib.Path,
@@ -1618,14 +1862,23 @@ class FileSystemTree:
                 # manipulations via des appels à ses méthodes.
                 #
                 if isinstance(location, str):
-                    self.location_object = pathlib.Path(self.location_string)
+                    self.location_object = pathlib.Path(location)
 
                 elif isinstance(location, pathlib.PurePath):
                     self.location_object = location
 
+                elif isinstance(location, FileSystemTree._FileSystemLeaf):
+                    self.location_object = pathlib.Path(str(location))
+
+                    log_debug = self.tree.write_in_log
+                    log_debug("\tCRÉATION d'un objet _FileSystemLeaf à partir\n"
+                              "\td'un autre objet _FileSystemLeaf, c'est assez\n"
+                              "\trare pour être noté... !!!"
+                              )
+
                 else:
                     raise TypeError(
-                        "Argument should be a str object or a Path"
+                        "Argument should be a PathLike or FileSystemLeaf"
                         " object, not {}".format(type(location))
                         )
 
@@ -1650,7 +1903,7 @@ class FileSystemTree:
                 # d'accéder et / ou manipuler un noeud du système de
                 # fichiers, via les méthodes du module PATHLIB.
                 #
-                return str(location_object)
+                return str(self.location_object)
 
             else:
                 # Nous sommes ici dans le mode « pathlib_ignore » et
@@ -2317,7 +2570,7 @@ class FileSystemTree:
                 alors nous renvoyons directement le résultat de la
                 méthode pathlib.Path.iterdir().
 
-                . si notre mode d'exécution est « pathlib_direct »,
+                . en mode d'exécution est « pathlib_direct_... »,
                 cette méthode < _FileSystemLeaf >.iterdir() ne sera
                 pas appelée, pathlib.Path.iterdir() va la shunter
                 et donc ce sera aussi directement un itérateur qui
@@ -2348,8 +2601,8 @@ class FileSystemTree:
                 directement ceux de la méthode pathlib.Path.iterdir(),
                 que ce soit en mode « pathlib_deeply » ( mode que nous
                 pourrions contrôler via < _FileSystemLeaf >.iterdir() )
-                ou en « pathlib_direct » ( mode que nous ne savons pas
-                contrôler puisque direct : d'où le choix de conserver
+                ou en « pathlib_direct_... » ( modes que nous ne savons
+                pas contrôler puisque directs : d'où le choix de garder
                 le fonctionnement intrinsèque de PATHLIB ).
 
                 RQ : pathlib.Path(x).iterdir() donne 1 suite de paths
@@ -3041,7 +3294,8 @@ class FileSystemTree:
             ABSOLU.
             """
 
-            leaf = self.tree.node
+            #leaf = self.tree.node
+            leaf = self.tree.Path
 
             log_debug = self.tree.write_in_log
             log_debug('Recherche de fichiers via « _fake_iglob »')
@@ -3185,7 +3439,7 @@ class FileSystemTree:
                 ( cas « pathlib_ignore », « with_glob », « with_fnmatch » )
 
                 . soit une liste de path sous forme de pathlib.PATH
-                ( cas « pathlib_direct » ou « pathlib_deeply » )
+                ( cas « pathlib_direct_... » ou « pathlib_deeply » )
 
                 En effet, pathlib.glob() retourne une liste de valeurs
                 de type pathlib.PATH et non de type STRING !!!
@@ -3224,11 +3478,11 @@ class FileSystemTree:
                 la valeur retournée sera un PATH ABSOLU ( ie en mode
                 « pathlib_deeply ) de type PATHLIB.PATH.
 
-                Par contre, en mode « pathlib_direct », mode que nous
-                ne savons pas contrôler puisqu'il est direct et shunte
-                cette fonction, alors les paths seront absolus si le
-                module pathlib l'entend de cette oreille, ils seront
-                relatifs sinon...
+                Par contre, en modes « pathlib_direct_... », modes que
+                nous ne savons pas contrôler puisqu'ils sont directs &
+                shuntent cette fonction, alors les paths seront absolus
+                si le module pathlib l'entend de cette oreille, ils vont
+                être relatifs sinon...
 
             RQ : Le comportement intrinsèque du module PATHLIB est le
             suivant = pathlib.Path(x).glob(..) donne 1 suite de paths
@@ -3667,7 +3921,7 @@ class ScriptSkeleton:
 
             * pathlib_ignore ( None ) : pas de module PATHLIB.
 
-            * pathlib_direct : module PATHLIB sans filtre.
+            * pathlib_direct_... : module PATHLIB sans filtre.
 
             * pathlib_deeply : module PATHLIB incorporé.
 
@@ -3727,11 +3981,17 @@ class ScriptSkeleton:
             # On donne comme nom de module, le nom de base ( sans extension ) de notre
             # nom de fichier ( module_file ).
             #
-            module_name = self.files.node(module_file).stem
+            #module_name = self.files.node(module_file).stem
+            module_name = self.files.Path(module_file).stem
 
         self.logItem = None
         self.logItem = self.on_ouvre_le_journal(module_name)
-        self.files.register_log(self.logItem)
+
+        # Si la gestion du système de fichiers est assurée par un objet FileSystemTree,
+        # nous lui communiquons l'adresse de notre fichier LOG.
+        #
+        if isinstance(self.files, FileSystemTree):
+            self.files.register_log(self.logItem)
 
         # ATTENTION : Lorsque nous serons dans notre méthode __del__() et donc dans le
         # ramasse-miettes de Python = POTENTIELLEMENT, les objets LOG seront aussi en
@@ -3799,6 +4059,7 @@ class ScriptSkeleton:
         # des variables telles que renvoyées par :
         #
         #       ScriptSkeleton.files.node()
+        #       [ ou plutôt ScriptSkeleton.files.Path() dorénavant ]
         #
         # ... i.e :
         #
@@ -3928,8 +4189,10 @@ class ScriptSkeleton:
                 - le chemin complet du fichier recherché.
         """
 
+        #leaf = self.files.node
+        leaf = self.files.Path
         log = self.logItem
-        leaf = self.files.node
+
         last_level = ( len(masks) == 1 )
 
         # On recherche le premier masque dans la racine, car il faut bien
@@ -4053,8 +4316,9 @@ class ScriptSkeleton:
         une erreur .
         """
 
+        #leaf = self.files.node
+        leaf = self.files.Path
         no_error = True
-        leaf = self.files.node
 
         for key, value in self.paths_and_miscellaneous.items():
 
@@ -4122,8 +4386,9 @@ class ScriptSkeleton:
         paramètre d'entrée...
         """
 
+        #leaf = self.files.node
+        leaf = self.files.Path
         log = self.logItem
-        leaf = self.files.node
 
         os_dir = None
         os_node = None
@@ -4634,7 +4899,8 @@ class ScriptSkeleton:
             # Création d'un fichier temporaire qui va nous servir d
             # journal d'exécution.
             #
-            if directory is None or not self.files.node(directory).is_dir():
+            #if directory is None or not self.files.node(directory).is_dir():
+            if directory is None or not self.files.Path(directory).is_dir():
                 directory = str(self.files.cwd())
 
             file_prefix = f'#_LOG_for_{log_name}_#_'
@@ -4736,7 +5002,8 @@ class ScriptSkeleton:
         # On affiche le nom du module en lettres capitales, i.e le nom du fichier, mais sans
         # son extension.
         #
-        short_name = self.files.node(module_file).stem
+        #short_name = self.files.node(module_file).stem
+        short_name = self.files.Path(module_file).stem
 
         log.debug('')
         log.debug('Je me présente :')
@@ -4936,8 +5203,9 @@ class ScriptSkeleton:
             # suivant que ce script est lancé au travers de
             # Python IDLE ou pas.
             #
+            #myLogFile = self.files.node(self._logFile)
+            myLogFile = self.files.Path(self._logFile)
             idle_windows = 'pythonw.exe'
-            myLogFile = self.files.node(self._logFile)
 
             if idle_windows in sys.executable:
 
@@ -6013,7 +6281,7 @@ class ScriptSkeleton:
 
             * pathlib_ignore ( None ) : pas de module PATHLIB.
 
-            * pathlib_direct : module PATHLIB sans filtre.
+            * pathlib_direct_... : module PATHLIB sans filtre.
 
             * pathlib_deeply : module PATHLIB incorporé.
 
@@ -6048,14 +6316,15 @@ class ScriptSkeleton:
             # On créé un nouvel objet de gestion des noeuds de notre
             # système de fichiers.
             #
-            node_type_old = type(tree_old.node())
+            #node_type_old = type(tree_old.node())
+            node_type_old = type(tree_old.Path())
 
             self.files = FileSystemTree(
                 walking_mode = walking_mode,
                 with_pathlib = with_pathlib,
                 with_fnmatch = with_fnmatch,
                 with_glob = with_glob,
-                log = log
+                log_file = log
                 )
 
             # Si l'on a changé le type de stockage de la description
@@ -6067,7 +6336,9 @@ class ScriptSkeleton:
             #   Cf « ( ! ) ATTENTION ( ! ) : Choix a été fait de stocker »
             #
             tree_new = self.files
-            node_type_new = type(tree_new.node())
+
+            #node_type_new = type(tree_new.node())
+            node_type_new = type(tree_new.Path())
 
             if node_type_new != node_type_old:
 
@@ -6083,7 +6354,9 @@ class ScriptSkeleton:
                 for key, value in my_dict.items():
                     if type(value) == node_type_old:
                         log.critical("\tConversion de « %s »...", key)
-                        my_dict[key] = tree_new.node(str(value))
+
+                        #my_dict[key] = tree_new.node(str(value))
+                        my_dict[key] = tree_new.Path(str(value))
 
                 log.critical("\t~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
                 log.critical('')
@@ -6144,8 +6417,9 @@ class ScriptSkeleton:
             ABSOLU ( obtenues via leur méthode « resolve » ).
         """
 
+        #leaf = self.files.node
+        leaf = self.files.Path
         log = self.logItem
-        leaf = self.files.node
 
         if directory is None:
 
@@ -6166,9 +6440,14 @@ class ScriptSkeleton:
         # Nous imposons que le retour de notre fonction soit
         # une liste.
         #
-        # En effet, si « self.with_pathlib == pathlib_direct » :
+        # En effet, par exemple, si :
+        #
+        #   self.with_pathlib == pathlib_direct_via_path_method
+        #
+        # ... alors :
         #
         #   self.files.node(directory).glob(mask)
+        #   [ ou plutôt self.files.Path(directory).glob(mask) ]
         #   = < pathlib.Path >.glob(mask)
         #   = un itérateur !!!
         #
@@ -6207,6 +6486,7 @@ class ScriptSkeleton:
         # D'où la syntaxe :
         #
         #   return list(self.files.node(directory).glob(mask))
+        #   [ ou plutôt list( self.files.Path(..).glob(..) ) ]
         #
         # RQ : Depuis qu'1 compréhension de liste est utilisée,
         # la syntaxe ci-dessus a disparu puisqu'1 compréhension
@@ -6234,6 +6514,7 @@ class ScriptSkeleton:
             # node(directory).glob(mask) renvoie en effet autant
             # des fichiers que des répertoires, puisque c'est le
             # cas de :
+            # [ ou plutôt Path(directory).glob(mask) dorénavant ]
             #
             #   . pathlib.glob()
             #   . fnmatch.filter()
@@ -6722,7 +7003,8 @@ class ScriptSkeleton:
         :return: le nom de fichier désiré.
         """
 
-        leaf = self.files.node
+        #leaf = self.files.node
+        leaf = self.files.Path
 
         # Quel que soit le type en entrée ( STRING, pathlib.Path, ... )
         # l'appel ci-dessous construit un objet fichier.
@@ -6848,7 +7130,9 @@ class ScriptSkeleton:
         """
 
         log = self.logItem
-        node = self.files.node(destination)
+
+        #node = self.files.node(destination)
+        node = self.files.Path(destination)
         new_name = node.exists()
 
         if new_name:
@@ -7524,7 +7808,9 @@ if __name__ == "__main__":
         'Utilisation du module FNMATCH + os.listdir',
         'Utilisation du module FNMATCH + os.scandir',
         'Utilisation du module PATHLIB « enfoui »',
-        'Utilisation du module PATHLIB « direct »',
+        'Utilisation du module PATHLIB « direct » via la MÉTHODE Path()',
+        'Utilisation du module PATHLIB « direct » via la CLASSE Path()',
+        'Utilisation du module PATHLIB « direct » via le MODULE seul',
         ]
 
     # Les tuples ci-dessous correspondent à l'initialisation
@@ -7552,8 +7838,14 @@ if __name__ == "__main__":
         # Utilisation du module PATHLIB « enfoui »
         (False, False, pathlib_deeply, walking_ignore),
         #
-        # Utilisation du module PATHLIB « direct »
-        (False, False, pathlib_direct, walking_ignore),
+        # Utilisation du module PATHLIB « direct » via FileSystemTree.Path()
+        (False, False, pathlib_direct_via_path_method, walking_ignore),
+        #
+        # Utilisation du module PATHLIB « direct » via pathlib.Path()
+        (False, False, pathlib_direct_via_path_class, walking_ignore),
+        #
+        # Utilisation du module PATHLIB « direct » sans aucun filtre
+        (False, False, pathlib_direct_via_module_only, walking_ignore),
     ]
 
     idx = skull.choose_in_a_list(config_choice, 0)
@@ -7577,13 +7869,14 @@ if __name__ == "__main__":
         with_glob = w_glob
         )
 
-    leaf = skull.files.node
+    #leaf = skull.files.node
+    leaf = skull.files.Path
 
-    if (w_pathlib == pathlib_direct):
+    if (w_pathlib in pathlib_direct):
 
         node_file = leaf(__file__ + '.test')
 
-        skull.shw('\tTOUTES les méthodes de PATHLIB sont alors disponibles.')
+        skull.shw('\t===>>> TOUTES les méthodes de pathlib.PATH() sont alors disponibles.')
         skull.shw('')
         skull.shw(f'\tpath          = {node_file}')
         skull.shw(f'\tpath.SUFFIXES = {node_file.suffixes}')
@@ -7595,6 +7888,16 @@ if __name__ == "__main__":
             log.debug('\t\t%s', parent)
 
         skull.shw('')
+        skull.shw('')
+
+        if w_pathlib == pathlib_direct_via_module_only:
+
+            skull.shw('\t===>>> TOUTES les classes & fonctions de PATHLIB sont même ici disponibles.')
+            skull.shw('')
+            skull.shw(f'\tPurePath        = {type(skull.files.PurePath())}')
+            skull.shw(f'\t_WindowsFlavour = {type(skull.files._WindowsFlavour())}')
+            skull.shw('')
+            skull.shw('')
 
 
     # #######################################################################
@@ -7821,13 +8124,13 @@ if __name__ == "__main__":
         #
         # Nous avons depuis élargi le nombre des cas où nous
         # testions _fake_iglob(). Pour autant, ns ne testons
-        # pas cette méthode dans le mode « pathlib_direct »
-        # puisque, dans ce mode, la gestion du système de
+        # pas cette méthode en modes « pathlib_direct_... »
+        # puisque, dans ces modes, la gestion du système de
         # fichiers est totalement déléguée au module PATHLIB
         # et à ses objets pathlib.PATH qui ne disposent pas
         # d'une méthode _fake_iglob()... !!!
         # 
-        if not (w_pathlib == pathlib_direct):
+        if not (w_pathlib in pathlib_direct):
 
             # On appelle _fake_iglob() pour vérifier que
             # Python n'y plante pas.
@@ -8407,6 +8710,16 @@ if __name__ == "__main__":
 
         paths_with_slash = {
             #
+            # Pour *ARGS :
+            # ~~~~~~~~~~~~
+            #
+            'DOS 1 part'      : ('C:/', ),
+            'DOS 2 parts'     : ('C:/', 'Voici' ),
+            'DOS 3 parts'     : ('C:/', 'Voici', 'un', 'path !' ),
+            'Unix 1 part'     : ('//server', ),
+            'Unix 2 parts'    : ('//server', 'Voici' ),
+            'Unix 3 parts'    : ('//server', 'Voici', 'un', 'path !' ),
+            #
             # Pour WINDOWS : ( principalement )
             # ~~~~~~~~~~~~~~
             #
@@ -8486,18 +8799,23 @@ if __name__ == "__main__":
 
         paths = paths_with_slash if os.name != 'nt' else {
             k.replace('/', '\\')
-            : v.replace('/', '\\')
+            : tuple(s.replace('/', '\\') for s in v)
+                if isinstance(v, tuple)
+                else v.replace('/', '\\')
             for k, v in paths_with_slash.items()
         }
 
         for k, p in paths.items():
 
-            n = leaf(p)
+            n = leaf(*p) if isinstance(p, tuple) else leaf(p)
 
-            log.info(f'Répertoire : « {k:^16} » = {p}')
-            log.info('~~~~~~~~~~~~')
+            log.info(f'Localisation : « {k:^16} » = {p}')
+            log.info('~~~~~~~~~~~~~~')
             log.info('')
-            log.info(f'splitroot\t-> {n._flavour.splitroot(p)}')
+            log.info(f'path construit\t-> {n}')
+            log.info('')
+            log.info(f'splitroot\t-> {n._flavour.splitroot(str(n))}')
+            log.info('')
 
             try:
                 uri = n.as_uri()
