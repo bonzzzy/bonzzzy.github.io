@@ -24,7 +24,7 @@ if __name__ == "__main__":
         )
 
     _my_log = _my_skeleton.logItem
-    _leaf = _my_skeleton.files.node
+    _leaf = _my_skeleton.files.Path
 
     #default_src = os.path.basename(__file__)
     default_src = _leaf(__file__).name

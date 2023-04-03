@@ -1210,12 +1210,12 @@ class FileSystemTree:
         ses méthodes. L'objet pathlib.Path sera en effet directement
         appelé !!!
 
-        Toutes les fonctions PATHLIB sont alors disponibles, en tout
-        cas pour celles au niveau d'une instance ( ie du même niveau
-        que nos objets _FileSystemLeaf ).
+        Toutes les méthodes de la classe pathlib.PATH sont alors ici
+        disponibles.
 
-        Pour les méthodes de classe ( cwd(), home() & autres ), elles
-        doivent être codées au niveau de la classe FileSystemTree...
+        Pour les classes et fonctions du module « pathlib » ( telles
+        PurePath() & autres ), elles doivent être codées au niveau de
+        notre classe FileSystemTree...
 
         ... SAUF dans le mode « pathlib_direct_via_module_only », cas
         où aucun objet FileSystemTree n'est créé : FileSystemTree, là,
@@ -1272,11 +1272,11 @@ class FileSystemTree:
             #
             # C'est pathlib qui réalisera tout !
             #
-            # Dans ce cas, TOUTES les fonctions PATHLIB sont
+            # Dans ce cas, TOUTES les fonctionnalités du module
+            # « PATHLIB » ( telles PurePath() et autres ) sont
             # alors disponibles, autant pour celles au niveau
             # d'une instance de l'objet pathlib.Path() que pour
-            # les fonctions au niveau du module lui-même ( cwd(),
-            # home() & autres ).
+            # les fonctions au niveau du module lui-même.
             #
             # FileSystemTree, ici, n'est rien d'autre qu'un ALIAS
             # vers le module PATHLIB !!!
@@ -1453,63 +1453,6 @@ class FileSystemTree:
         self.write_in_log = log_debug
 
 
-    def cwd(self) -> object:
-        # -> _FileSystemLeaf [ ou ] PATHLIB.PATH
-        """ Pour connaître le RÉPERTOIRE de TRAVAIL.
-
-        RQ : Les méthodes de classe ( telles cwd() ou home() )
-        doivent être codées au niveau de FileSystemTree, et ce
-        quel que soit le module sous-jacent utilisé pour gérer
-        les fichiers et répertoires ( OS.PATH, PATHLIB, ...).
-        Rechercher « classmethod » dans :
-
-            https://docs.python.org/fr/3/library/pathlib.html
-
-        :return: le répertoire de travail, au format pathlib.Path
-        ou _FileSystemLeaf...
-        """
-
-        if self.pathlib_import:
-            return pathlib.Path.cwd()
-
-        else:
-            return self._FileSystemLeaf(self, os.getcwd())
-  
-
-    def home(self) -> object:
-        # -> _FileSystemLeaf [ ou ] PATHLIB.PATH
-        """ Pour connaître le RÉPERTOIRE de l'UTILISATEUR.
-
-        RQ : Les méthodes de classe ( telles cwd() ou home() )
-        doivent être codées au niveau de FileSystemTree, et ce
-        quel que soit le module sous-jacent utilisé pour gérer
-        les fichiers et répertoires ( OS.PATH, PATHLIB, ...).
-        Rechercher « classmethod » dans :
-
-            https://docs.python.org/fr/3/library/pathlib.html
-
-        :return: le « home directory », au format pathlib.Path
-        ou _FileSystemLeaf...
-        """
-
-        if self.pathlib_import:
-            return pathlib.Path.home()
-
-        else:
-            # RQ : Sous Windows, on ne peut pas invoquer le seul
-            # os.environ['HOMEPATH'] car ce dernier renvoie qqch
-            # comme '\\Users\\bonzz', au lieu de 'C:\\Users\\...'.
-            # Il manque donc le disque dans la réponse, et il faut
-            # également se référer à HOMEDRIVE.
-            #
-            #   Sous Unix, la / les variable(s) d'environnement
-            # sont différentes...
-            #
-            #   Bref, autant utiliser expanduser('~') !!!
-            #
-            return self._FileSystemLeaf(self, os.path.expanduser('~'))
-
-
     #def node ||-> Pour compatibilité avec pathlib, node est devenu Path.
     def Path(
         self,
@@ -1560,18 +1503,11 @@ class FileSystemTree:
         """
 
         # Si l'on travaille en direct avec le module PATHLIB, alors
-        # on renvoie l'objet PATHLIB créé, ce qui va shunter notre
-        # classe _FileSystemLeaf & ses méthodes. L'objet pathlib.Path
-        # sera en effet directement appelé !!!
+        # on renvoie un objet PATH, ce qui va shunter notre classe
+        # _FileSystemLeaf & ses méthodes. L'objet pathlib.Path sera
+        # en effet directement appelé !!!
         #
-        # Toutes les fonctions PATHLIB sont alors disponibles, en tout
-        # cas pour celles au niveau d'une instance. Pour les méthodes
-        # de classe ( cwd(), home(), ... ), elles doivent être codées
-        # au niveau de notre classe FileSystemTree.
-        #
-        # => Rechercher « classmethod » dans :
-        #
-        #   https://docs.python.org/fr/3/library/pathlib.html
+        # Toutes les méthodes de PATH sont alors disponibles.
         #
         if self.pathlib_direct:
 
@@ -1841,12 +1777,11 @@ class FileSystemTree:
             #   >>> os.path.normpath(location)
             #       'C:\\Voici\\un\\test'
             #
-            location = os.path.normpath(os.fspath(location))
-
-            # Quel que soit le type de « location » ( pathlib.Path,
-            # str, ... ) l'affectation suivante fonctionnera.
+            # RQ : Quel que soit le type de « location » ( pathlib.Path,
+            # str, _FileSystemLeaf, ... ) l'affectation suivante marche.
             #
-            self.location_string = str(location)
+            node = os.path.normpath(os.fspath(str(location)))
+            self.location_string = node
 
             if tree.pathlib_import:
                 # Lorsque nous nous trouvons ici, alors notre mode
@@ -1862,13 +1797,13 @@ class FileSystemTree:
                 # manipulations via des appels à ses méthodes.
                 #
                 if isinstance(location, str):
-                    self.location_object = pathlib.Path(location)
+                    self.location_object = pathlib.Path(node)
 
                 elif isinstance(location, pathlib.PurePath):
                     self.location_object = location
 
                 elif isinstance(location, FileSystemTree._FileSystemLeaf):
-                    self.location_object = pathlib.Path(str(location))
+                    self.location_object = pathlib.Path(node)
 
                     log_debug = self.tree.write_in_log
                     log_debug("\tCRÉATION d'un objet _FileSystemLeaf à partir\n"
@@ -2005,6 +1940,108 @@ class FileSystemTree:
                             self.tree,
                             os.path.join(p, self.location_string)
                             )
+
+
+        def cwd(self) -> object:
+            # -> _FileSystemLeaf [ ou ] PATHLIB.PATH
+            """ Pour connaître le RÉPERTOIRE de TRAVAIL.
+
+            Cette méthode doit se trouver au sein de _FileSystemLeaf,
+            car c'est une méthode de classe de pathlib.Path, or notre
+            classe _FileSystemLeaf émule pathlib.Path, émulation qui
+            peut être shuntée si « pathlib_direct_via_module_only »
+            est le mode d'exécution choisi.
+
+            En fait, si cette méthode cwd() se trouvait dans notre
+            sur-classe FileSystemTree ( comme auparavant ), un appel
+            ( en mode « pathlib_direct_via_module_only » ) à :
+
+                FileSystemTree.cwd()
+
+            ... répondrait :
+
+                AttributeError: module 'pathlib' has no attribute 'cwd'
+
+            ... puisque FileSystemTree serait là un simple ALIAS vers
+            le module pathlib ( et que seul pathlib.Path.cwd() est un
+            appel valide ).
+
+            Par ailleurs, ici, cwd() n'est pas une méthode de classe,
+            contrairement au cwd() de pathlib.Path, car nous utilisons
+            la donnée « self » donc cela RESTREINT notre émulation du
+            module pathlib car NOUS NE POUVONS LANCER L'APPEL :
+            
+                FileSystemTree._FileSystemLeaf.cwd()
+                [ tout comme on écrit pathlib.Path.cwd() ]
+
+            ... IL NOUS FAUT LANCER :
+
+                FileSystemTree._FileSystemLeaf().cwd()
+
+            ... ce qui implique la création d'une instance !!!
+
+            Ainsi, SAUF en mode « pathlib_direct_via_module_only », la
+            syntaxe :
+
+                FileSystemTree.Path.cwd()
+
+            ... ne sera pas acceptée. Il nous faut écrire :
+
+                FileSystemTree.Path().cwd()
+
+            Heureusement pour nous :
+
+                pathlib.Path.cwd()
+
+            ... et
+
+                pathlib.Path().cwd()
+
+            ... sont équivalents pour le module pathlib !!!
+
+            :return: le répertoire de travail, au format pathlib.Path
+            ou _FileSystemLeaf.
+            """
+
+            if self.tree.pathlib_import:
+                return pathlib.Path.cwd()
+
+            else:
+                return FileSystemTree._FileSystemLeaf(
+                        self.tree, os.getcwd()
+                        )
+
+
+        def home(self) -> object:
+            # -> _FileSystemLeaf [ ou ] PATHLIB.PATH
+            """ Pour connaître le RÉPERTOIRE de l'UTILISATEUR.
+
+            Pour ce qui est de la localisation de cette méthode au sein
+            de la classe FileSystemTree, cf les rmqs en entête de notre
+            méthode cwd().
+
+            :return: le « home directory », au format pathlib.Path
+            ou _FileSystemLeaf...
+            """
+
+            if self.pathlib_import:
+                return pathlib.Path.home()
+
+            else:
+                # RQ : Sous Windows, on ne peut pas invoquer le seul
+                # os.environ['HOMEPATH'] car ce dernier renvoie qqch
+                # comme '\\Users\\bonzz', au lieu de 'C:\\Users\\...'.
+                # Il manque donc le disque dans la réponse, et il faut
+                # également se référer à HOMEDRIVE.
+                #
+                #   Sous Unix, la / les variable(s) d'environnement
+                # sont différentes...
+                #
+                #   Bref, autant utiliser expanduser('~') !!!
+                #
+                return FileSystemTree._FileSystemLeaf(
+                        self.tree, os.path.expanduser('~')
+                        )
 
 
         def is_dir(self) -> bool:
@@ -4436,7 +4473,11 @@ class ScriptSkeleton:
 
         # Les modules optionnels sont-ils chargés ?
         #
-        self.paths_and_miscellaneous['walking_MODE'] = str(self.files.walking_mode)
+        if isinstance(self.files, FileSystemTree):
+            self.paths_and_miscellaneous[
+                'walking_MODE'
+                ] = str(self.files.walking_mode)
+
         self.paths_and_miscellaneous['module_PATHLIB'] = str(pathlib)
         self.paths_and_miscellaneous['module_FNMATCH'] = str(fnmatch)
         self.paths_and_miscellaneous['module_GLOB'] = str(glob)
@@ -4495,7 +4536,7 @@ class ScriptSkeleton:
         # On initialise le répertoire de travail de ce programme.
         #
         if directory is None or not leaf(directory).is_dir():
-            working_node = self.files.cwd()
+            working_node = leaf().cwd()
         else:
             working_node = leaf(directory)
 
@@ -4866,6 +4907,8 @@ class ScriptSkeleton:
         ou que, ayant déjà été créé, on renvoie à nouveau le même.
         """
 
+        leaf = self.files.Path
+
         # On définit nos paramètres en fonction de notre mode de DEBUG personnel.
         # ( cf ci-dessus « ATTENTION : PERSONNALISATION de notre mode DEBUG » )
         #
@@ -4900,8 +4943,8 @@ class ScriptSkeleton:
             # journal d'exécution.
             #
             #if directory is None or not self.files.node(directory).is_dir():
-            if directory is None or not self.files.Path(directory).is_dir():
-                directory = str(self.files.cwd())
+            if directory is None or not leaf(directory).is_dir():
+                directory = str(leaf().cwd())
 
             file_prefix = f'#_LOG_for_{log_name}_#_'
             file_object = tempfile.NamedTemporaryFile(
@@ -9011,7 +9054,7 @@ if __name__ == "__main__":
             #
             # Nous ne sommes donc pas sous Windows mais sous Posix !!!
             #
-            u = skull.files.home()
+            u = leaf().home()
             url_dict['file_root'] = u.as_uri()
             url_dict['file_dir']  = leaf(u / '..' / 'tmp').as_uri()
             url_dict['file_txt']  = leaf(u / 'skeleton.py').as_uri()
