@@ -1356,11 +1356,11 @@ class FileSystemTree:
         """
 
         # Si nous n'initialisons pas self.write_in_log, Python va
-        # planter dans l'appel à self.register_log(), en invoquant
+        # planter dans l'appel à self._register_log(), en écrivant
         # que « self » n'a pas d'attribut « write_in_log » !!!
         #
         self.write_in_log = None
-        self.register_log(log_file)
+        self._register_log(log_file)
         log_debug = self.write_in_log
 
         # On importe les modules PATHLIB, FNMATCH et GLOB si tel
@@ -1437,7 +1437,7 @@ class FileSystemTree:
         log_debug('')
  
 
-    def register_log(
+    def _register_log(
         self,
         log: logging.Logger = None
         ):        
@@ -1451,6 +1451,307 @@ class FileSystemTree:
             log_debug = log.debug
 
         self.write_in_log = log_debug
+
+
+    def _cwd(self) -> object:
+        # -> _FileSystemLeaf [ ou ] PATHLIB.PATH
+        """ Pour connaître le RÉPERTOIRE de TRAVAIL.
+
+        Au regard de notre structure de donnée ( FileSystemTree
+        représente un système de gestion de fichiers ), il semble
+        logique que cette fonctionnalité se trouve au niveau de
+        la classe FileSystemTree. Le répertoire de travail dépend
+        en effet du système lui-même, et est fixé par ce système
+        lui-même. Ce n'est donc pas un attribut d'un noeud sous-
+        jacent, d'où :
+
+            FileSystemTree._cwd()
+
+        Pour autant, une méthode éponyme existe au niveau de notre
+        sous-classe _FileSystemLeaf ( et c'est cette méthode qui
+        doit être utilisée ) :
+
+            FileSystemTree._FileSystemLeaf.cwd()
+
+        En effet, la méthode cwd() que nous voulons écrire se veut
+        le pendant de :
+
+            pathlib.Path.cwd()
+
+        Or notre classe FileSystemTree est 1 émulation de pathlib,
+        émulation devient même un simple ALIAS lorsque le mode d'
+        exécution choisi est « pathlib_direct_via_module_only ».
+
+        Ainsi, si la méthode cwd() se trouve dans FileSystemTree,
+        un appel ( en mode « pathlib_direct_via_module_only » ) à :
+
+            FileSystemTree.cwd()
+
+        ... ie un appel du type :
+
+            skull.files.cwd()
+
+        ... sera traduit en :
+
+            pathlib.cwd()
+
+        ... puisque FileSystemTree est là un simple ALIAS vers le
+        module pathlib.
+
+        Or seul pathlib.Path.cwd() est 1 appel valide. Il n'existe
+        pas de syntaxe « pathlib.cwd() ».
+
+        Python répondra donc :
+
+            « AttributeError: module 'pathlib' has no attribute 'cwd' »
+
+        D'où le besoin que cette fonction soit aussi présente au sein
+        de _FileSystemLeaf.
+
+        La source du problème vient du fait que nous avons émulé le
+        module pathlib par une classe FileSystemTree, dont nous avons
+        autorisé qu'elle ait plusieurs instances.
+
+        POURQUOI ?
+
+        Dans l'absolu, pour pouvoir gérer plusieurs filesystem ( cas
+        possible ? ) ; mais aussi pour pouvoir gérer un même système
+        avec des paramètres différents ( with_pathlib, with_fnmatch,
+        with_glob, ... ).
+
+        Cela nous oblige à fournir à chaque PATH ( _FileSystemLeaf )
+        une référence à l'objet FileSystemTree qui l'a créé, car c'est
+        cet objet qui a pour mission de stocker ces paramètres.
+
+        PATHLIB, au contraire, n'a qu'une seule INSTANCE de lui-même,
+        et peut donc avoir des @classmethod.
+
+        Nous avons voulu être plus souple que pathlib, mais cela a
+        compliqué l'émulation par nous-mêmes de ce module... !!!
+
+        Nous pourrions créer 1 objet FileSystemLeaf global, pour s'y
+        référer dans le cas de ces méthodes ( cwd et home ), mais ça
+        serait une FRAGILITÉ de skeleton.py, en cas d'utilisations
+        concourantes ( certes rarissimes ) de plusieurs objets de la
+        classe FileSystemTree...
+
+        C'est donc devenu une RESTRICTION de skeleton.py.
+
+
+[!!!]   ATTENTION ( 1 ) : Ici, _cwd() ne peut être indiquée en tant
+        que méthode de classe ( @classmethod ), contrairement au cwd()
+        de pathlib.Path, car nous y utilisons la donnée « self ».
+
+
+[!!!]   ATTENTION ( 2 ) : Une autre différence par rapport à pathlib
+        est le fait que pour obtenir un path, nous passons via notre
+        méthode Path() alors que pathlib utilise sa classe Path !!!
+
+        Donc cela RESTREINT notre émulation du module pathlib puisque
+        NOUS NE POUVONS PAS LANCER L'APPEL :
+
+            FileSystemTree._FileSystemLeaf.cwd()
+            [ tout comme on écrit pathlib.Path.cwd() ]
+
+        ... IL NOUS FAUT LANCER :
+
+            FileSystemTree._FileSystemLeaf().cwd()
+
+        ... ce qui implique la création d'une instance !!!
+
+        Même en renommant en _FileSystemLeaf en Path, cela ne marche
+        pas non plus :
+
+            FileSystemTree.Path.cwd()
+            [ où Path est notre sous-classe et non notre méthode ]
+
+        ... car cwd() ne peut être @classmethod de _FileSystemLeaf
+        ( car elle utilise la donnée « self » ).
+
+        Ainsi, SAUF en mode « pathlib_direct_via_module_only », une
+        syntaxe du type :
+
+            FileSystemTree.Path.cwd()
+
+        ... ne sera pas acceptée. Il nous faut écrire :
+
+            FileSystemTree.Path().cwd()
+
+        Heureusement pour nous :
+
+            pathlib.Path.cwd()
+
+        ... et
+
+            pathlib.Path().cwd()
+
+        ... sont équivalents pour le module pathlib !!!
+
+
+[!!!]   ATTENTION ( 3 ) : Nous avons finalement autorisé la syntaxe
+        « FileSystemTree.Path.cwd() » grâce aux mécanismes Python des
+        ATTRIBUTS d'une MÉTHODE ( au niveau CLASSE et non instance ).
+
+            Cf ci-dessous notre méthode _fake_cwd() à « def _fake_cwd ».
+
+
+        :return: le répertoire de travail, au format pathlib.Path
+        ou _FileSystemLeaf.
+        """
+
+        if self.pathlib_import:
+            return pathlib.Path.cwd()
+
+        else:
+            return FileSystemTree._FileSystemLeaf(self, os.getcwd())
+
+
+    def _home(self) -> object:
+        # -> _FileSystemLeaf [ ou ] PATHLIB.PATH
+        """ Pour connaître le RÉPERTOIRE de l'UTILISATEUR.
+
+        Pour ce qui est de la localisation de cette méthode au sein
+        de la classe FileSystemTree, cf les rmqs en entête de notre
+        méthode _cwd() ci-dessus.
+
+        :return: le « home directory », au format pathlib.Path ou
+        _FileSystemLeaf...
+        """
+
+        if self.pathlib_import:
+            return pathlib.Path.home()
+
+        else:
+            # RQ : Sous Windows, on ne peut pas invoquer le seul
+            # os.environ['HOMEPATH'] car ce dernier renvoie qqch
+            # comme '\\Users\\bonzz', au lieu de 'C:\\Users\\...'.
+            # Il manque donc le disque dans la réponse, et il faut
+            # également se référer à HOMEDRIVE.
+            #
+            #   Sous Unix, la / les variable(s) d'environnement
+            # sont différentes...
+            #
+            #   Bref, autant utiliser expanduser('~') !!!
+            #
+            return FileSystemTree._FileSystemLeaf(
+                    self, os.path.expanduser('~')
+                    )
+
+
+    @classmethod
+    def _syntax_error(cls, detail: str, locals: dict):
+        """ Pour traiter les situations d'utilisations non
+        correctes type FileSystemTree.Path.xxx !!!
+
+        En fait :
+
+            . FileSystemTree.Path.cwd() n'est pas autorisée
+            dans la plupart de nos modes « with_pathlib ».
+
+            . pathlib.Path.cwd() est ok car cwd() y est une
+            méthode de classe ( @classmethod ).
+
+        Ainsi, dans la majorité des modes « with_pathlib » :
+
+            . INCORRECTS =
+
+                FileSystemTree.Path.cwd()
+                FileSystemTree.Path.home()
+
+            . OK =
+
+                FileSystemTree.Path().cwd()
+                FileSystemTree.Path().home()
+
+        Notre mission :
+
+            . Afficher un message,
+            . Lever une exception AttributeError.
+        """
+
+        msg = (
+            """\n"""
+            """     =============\n"""
+            """     ATTENTION !!!\n"""
+            """     =============\n"""
+            """         Le module pathlib ne gère, ici, pas de façon assez directe le système de fichier pour que la syntaxe\n"""
+           f"""         ... FileSystemTree.Path.{detail}() soit autorisée.\n"""
+            """         Il faut se placer dans l'un des modes suivants :\n"""
+            """             - soit « pathlib_direct_via_path_class »,\n"""
+            """             - soit « pathlib_direct_via_module_only ».\n"""
+           f"""         Dans le mode actuel, seule la syntaxe FileSystemTree.Path().{detail}() est comprise.\n"""
+           f"""         [ et ce car _FileSystemLeaf.{detail}() ne peut être une méthode de classe... ].\n\n"""
+           f"""         INCORRECT = FileSystemTree.Path.{detail}() ---> OK = FileSystemTree.Path().{detail}()\n\n"""
+           f"""         Classe    : {cls}\n"""
+           f"""         Variables : {locals}"""
+        )
+
+        raise AttributeError(msg)
+
+
+    @classmethod
+    #def _fake_cwd():
+    #def _fake_cwd(cls):
+    def _fake_cwd(*args, **kwargs):
+        """ Permet d'afficher un avertissement lorsque la
+        syntaxe FileSystemTree.Path.cwd() est écrite dans
+        un contexte incorrect.
+
+        Cette méthode a pour vocation d'être affectée à un
+        attribut « cwd » de notre méthode Path() ci-dessous.
+
+        Et oui, des ATTRIBUTS de MÉTHODE, c'est POSSIBLE !!!
+        ... mais seulement au niveau d'une classe :
+
+            cls.method.attribut = xxx
+
+        On ne peut par contre pas en écrire au niveau d'un
+        objet instancié. Ainsi :
+
+            self.method.attribut = xxx
+
+        ... fait PLANTER l'interpréteur Python !!!
+
+        Cf les rmqs en entête de notre propre méthode _cwd(),
+        ie ci-dessus à « def _cwd ».
+
+        Cf ci-dessous les rmqs à :
+
+             « On définit les deux ATTRIBUTS de la MÉTHODE Path qui vont nous »
+
+        Cf les remarques en en-tête de la méthode cwd() de
+        _FileSystemLeaf, ie ci-dessous à « def cwd ».
+        """
+
+        # Nous avons convervé l'écriture :
+        #
+        #   _fake_cwd(*args, **kwargs)
+        #
+        # ... afin de pouvoir tester différents cas possibles d'
+        # ATTRIBUTS de la MÉTHODE.
+        #
+        # Cf ci-dessous les rmqs à :
+        #
+        #   « On définit les deux ATTRIBUTS de la MÉTHODE Path qui vont nous »
+        #
+        if args:
+            args[0]._syntax_error('cwd', locals())
+
+        else:
+            FileSystemTree._syntax_error('cwd', locals())
+
+
+    @classmethod
+    def _fake_home(*args, **kwargs):
+        """ Idem méthode _fake_cwd() ci-dessus, mais pour la
+        syntaxe FileSystemTree.Path.home().
+        """
+
+        if args:
+            args[0]._syntax_error('home', locals())
+
+        else:
+            FileSystemTree._syntax_error('home', locals())
 
 
     #def node ||-> Pour compatibilité avec pathlib, node est devenu Path.
@@ -1546,6 +1847,162 @@ class FileSystemTree:
 
             #return self._FileSystemLeaf(self, location)
             return self._FileSystemLeaf(self, *args)
+
+
+    # On définit les deux ATTRIBUTS de la MÉTHODE Path qui vont nous
+    # permettre de simuler un appel type « pathlib.Path.cwd() », ie
+    # un appel qui ne demande PAS une INSTANCIATION d'objet...
+    #
+    # Cet appel est possible avec « pathlib » puisque Path ie est une
+    # classe. Pour skeleton, son équivalent ( FileSystemTree.Path.cwd )
+    # est complexe à mettre en oeuvre puisque FileSystemTree.Path() y
+    # est une méthode !!!
+    #
+    # Seul un attribut de méthode au niveau classe peut-être défini.
+    # Si nous voulons que notre attribut de méthode ( Path.cwd ) nous
+    # fournisse réellement la valeur du répertoire de travail, il faut
+    # donc qu'il pointe vers une @classmethod... mais c'est impossible
+    # à cause de références à « self » qui se trouve dans notre méthode
+    # _cwd().
+    #
+    # Les 2 attributs de méthodes vont donc pointer vers 2 méthodes qui
+    # sont spécifiques et qui soulève une exception dans le cas d'une
+    # utilisation qui ne corresponde pas au mode d'exécution dans lequel
+    # nous nous trouvons.
+    #
+    # En effet, FileSystemTree.Path.cwd() ie un appel type :
+    #
+    #   skull.files.Path.cwd()
+    #
+    # ... fonctionnera exclusivement dans les modes « with_pathlib » :
+    #
+    #   - « pathlib_direct_via_path_class »
+    #   - « pathlib_direct_via_module_only »
+    #
+    # ... dans tous les autres modes, l'exception sera levée !
+    #
+    # Cf nos autotests « des SYNTAXES FileSystemLeaf.Path.cwd() / .home() »
+    #
+    #
+    # RQ = La syntaxe suivante :            ----- BUG ------
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~
+    #
+    #   Path.cwd = FileSystemTree._fake_cwd
+    #
+    # ... n'est pas autorisée. L'interpréteur Python s'arrête dès le
+    # parsing du code sur :
+    #
+    #   « NameError: name 'FileSystemTree' is not defined »
+    #
+    # ... et ce, probablement, car nous sommes à ce stade encore en
+    # cours de définition de FileSystemTree.
+    #
+    #
+    # RQ = La syntaxe suivante :            ----- BUG ------
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~
+    #
+    #   Path.cwd = self._fake_cwd
+    #
+    # ... n'est bien sûr pas autorisée. Nous ne sommes pas ici une
+    # instance, mais au niveau d'une classe. « self » n'existe pas
+    # à ce niveau !!!
+    #
+    #
+    # RQ = La syntaxe suivante :            --- POSSIBLE ---
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~
+    #
+    #   Path.cwd = _fake_cwd
+    #
+    # ... est comprise et exécutée par Python. Mais, alors, cette
+    # méthode _fake_cwd ne doit accepter aucun paramètre, et n'en
+    # recevra aucun, car un appel type « skull.files.Path.cwd() »
+    # sera traduit en :
+    #
+    #   _fake_cwd()
+    #
+    # ... où aucun paramètre n'est transmis ( ni self, ni cls ) !
+    #
+    # Or cet état de fait doit rester ainsi car :
+    #
+    #   « pathlib.Path.cwd() » n'attend aucun paramètre.
+    #
+    # Ainsi, _fake_cwd() sera, au moment de cet appel, considérée
+    # telle 1 simple fonction, non associée à un quelconque objet
+    # ou à une quelconque classe !!!
+    #
+    # _fake_cwd() ne peut alors être déclarée en tant que méthode
+    # de classe, car elle recevrait sinon 1 paramètre « cls »...
+    # paramètre qu'elle n'attend pas au regard de sa définition.
+    #
+    # SAUF, pourrait-on penser, si nous la déclarons en :
+    #
+    #   def _fake_cwd(*args, **kwargs):
+    #
+    # ... ce qui est la méthode la plus souple et qui s'adaptera
+    # à tous les cas !!!
+    #
+    # POUR AUTANT, il n'est pas possible de faire de cette méthode
+    # une méthode de classe, dans ce cas, car Python plantera à l'
+    # exécution avec :
+    #
+    #   « TypeError: 'classmethod' object is not callable »
+    #
+    # Donc cette méthode est possible mais sans préciser _fake_cwd
+    # comme une méthode de classe.
+    #
+    #
+    # RQ = La syntaxe suivante :            ------ OK ------
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~
+    #
+    #   Path.cwd = lambda: FileSystemTree._fake_cwd()
+    #
+    # ... est celle retenue car elle est acceptée par Python, tant
+    # au parsing du code qu'à l'exécution, et car elle permet aussi
+    # de déclarer _fake_cwd comme une méthode de classe ( ie de lui
+    # associer le décorateur @classmethod ).
+    #
+    # Il faut d'ailleurs bien écrire :
+    #
+    #   « Path.cwd = lambda: FileSystemTree._fake_cwd() »
+    #   [ lambda(_) = FileSystemTree._fake_cwd() ]
+    #
+    # ... et non :
+    #
+    #   « Path.cwd = lambda: FileSystemTree._fake_cwd »
+    #   [ lambda(_) = FileSystemTree._fake_cwd ]
+    #
+    # ... car, dans ce 2nd cas, un appel tel skull.files.Path.cwd()
+    # renverrait  :
+    #
+    #   <bound method FileSystemTree._fake_cwd of <class '__main__.FileSystemTree'>>
+    #
+    # ... ie l'adresse de la méthode, et non le résultat de cette
+    # méthode !!!
+    #
+    # Cette écriture sous forme de fct° LAMBDA est la seule manière
+    # satisfaisante trouvée pour indiquer une auto-référence à la
+    # classe FileSystemTree lors de sa propre définition...
+    #
+    # Ceci fait, si _fake_cwd() est une simple méthode, nous pouvons
+    # la définir AVEC :
+    #
+    #       def _fake_cwd():
+    #   ou	def _fake_cwd(*args, **kwargs):
+    #
+    # ... MAIS si l'on veut la définir en tant que @classmethod, il
+    # faut écrire :
+    #
+    #       def _fake_cwd(cls):
+    #   ou	def _fake_cwd(*args, **kwargs):
+    #
+    # ... SINON, à l'exécution, nous aurons :
+    #
+    #   « TypeError: FileSystemTree._fake_cwd() takes 0 positional arguments but 1 was given »
+    #
+    #Path.cwd = FileSystemTree._fake_cwd
+    #Path.cwd = _fake_cwd
+    Path.cwd = lambda: FileSystemTree._fake_cwd()
+    Path.home = lambda: FileSystemTree._fake_home()
 
 
     class _FileSystemLeaf:
@@ -1942,6 +2399,7 @@ class FileSystemTree:
                             )
 
 
+        #@classmethod
         def cwd(self) -> object:
             # -> _FileSystemLeaf [ ou ] PATHLIB.PATH
             """ Pour connaître le RÉPERTOIRE de TRAVAIL.
@@ -1980,38 +2438,14 @@ class FileSystemTree:
 
             ... ce qui implique la création d'une instance !!!
 
-            Ainsi, SAUF en mode « pathlib_direct_via_module_only », la
-            syntaxe :
-
-                FileSystemTree.Path.cwd()
-
-            ... ne sera pas acceptée. Il nous faut écrire :
-
-                FileSystemTree.Path().cwd()
-
-            Heureusement pour nous :
-
-                pathlib.Path.cwd()
-
-            ... et
-
-                pathlib.Path().cwd()
-
-            ... sont équivalents pour le module pathlib !!!
-
             :return: le répertoire de travail, au format pathlib.Path
             ou _FileSystemLeaf.
             """
 
-            if self.tree.pathlib_import:
-                return pathlib.Path.cwd()
-
-            else:
-                return FileSystemTree._FileSystemLeaf(
-                        self.tree, os.getcwd()
-                        )
+            return self.tree._cwd()
 
 
+        #@classmethod
         def home(self) -> object:
             # -> _FileSystemLeaf [ ou ] PATHLIB.PATH
             """ Pour connaître le RÉPERTOIRE de l'UTILISATEUR.
@@ -2020,51 +2454,18 @@ class FileSystemTree:
             de la classe FileSystemTree, cf les rmqs en entête de notre
             méthode cwd().
 
-            :return: le « home directory », au format pathlib.Path
-            ou _FileSystemLeaf...
+            :return: le « home directory », au format pathlib.Path ou
+            _FileSystemLeaf...
             """
 
-            if self.pathlib_import:
-                return pathlib.Path.home()
-
-            else:
-                # RQ : Sous Windows, on ne peut pas invoquer le seul
-                # os.environ['HOMEPATH'] car ce dernier renvoie qqch
-                # comme '\\Users\\bonzz', au lieu de 'C:\\Users\\...'.
-                # Il manque donc le disque dans la réponse, et il faut
-                # également se référer à HOMEDRIVE.
-                #
-                #   Sous Unix, la / les variable(s) d'environnement
-                # sont différentes...
-                #
-                #   Bref, autant utiliser expanduser('~') !!!
-                #
-                return FileSystemTree._FileSystemLeaf(
-                        self.tree, os.path.expanduser('~')
-                        )
+            return self.tree._home()
 
 
         def is_dir(self) -> bool:
             """ Sommes-nous un RÉPERTOIRE ?
             """
 
-            if self.tree.pathlib_import:
-                # Lorsque nous nous trouvons ici, alors notre mode
-                # d'exécution est « pathlib_deeply ».
-                #
-                # Ainsi, nous utilisons le module PATHLIB, mais pas
-                # directement. Un objet _FileSystemLeaf est créé afin
-                # d'accéder et / ou manipuler un noeud du système de
-                # fichiers, via les méthodes du module PATHLIB.
-                #
-                return self.location_object.is_dir()
-
-            else:
-                # Nous sommes ici dans le mode « pathlib_ignore » et
-                # nous n'utilisons que les fonctions de OS.PATH pour
-                # émuler les méthodes de PATHLIB.
-                #
-                return os.path.isdir(self.location_string)
+            return os.path.isdir(self.location_string)
 
 
         def is_file(self) -> bool:
@@ -4028,7 +4429,7 @@ class ScriptSkeleton:
         # nous lui communiquons l'adresse de notre fichier LOG.
         #
         if isinstance(self.files, FileSystemTree):
-            self.files.register_log(self.logItem)
+            self.files._register_log(self.logItem)
 
         # ATTENTION : Lorsque nous serons dans notre méthode __del__() et donc dans le
         # ramasse-miettes de Python = POTENTIELLEMENT, les objets LOG seront aussi en
@@ -7941,6 +8342,79 @@ if __name__ == "__main__":
             skull.shw(f'\t_WindowsFlavour = {type(skull.files._WindowsFlavour())}')
             skull.shw('')
             skull.shw('')
+
+
+    # #######################################################################
+    # -----------------------------------------------------------------------
+    # #######################################################################
+    # -----------------------------------------------------------------------
+    # #######################################################################
+    #
+    user_answer = skull.ask_yes_or_no(
+        "Voulez-vous que je réalise le TEST des SYNTAXES FileSystemLeaf.Path.cwd() / .home() ?",
+        'non'
+        )
+
+    if user_answer:
+
+        # On teste la syntaxe utilisant des ATTRIBUTS de
+        # MÉTHODE, syntaxe utilisée à cause de l'émulation
+        # de pathlib par FileSystemTree...
+        #
+        # Ces attributs de la méthode Path dans la classe
+        # FileSystemTree sont :
+        #
+        #   - Path.cwd
+        #   - Path.home
+        #
+        # En fonction de la valeur du mode d'exécution, ns
+        # aurons les retours suivants pour Path.cwd() :
+        #
+        #   pathlib_ignore : AttributeError
+        #   pathlib_deeply : AttributeError
+        #   pathlib_direct_via_path_method : AttributeError
+        #   pathlib_direct_via_path_class  : le cwd actuel
+        #   pathlib_direct_via_module_only : le cwd actuel
+        #
+        # Idem pour Path.home().
+        #
+        log.info('')
+        log.info('\t========================================')
+        log.info('\t>>> SYNTAXES FileSystemLeaf.Path.xxx <<<')
+        log.info('\t========================================')
+        log.info('')
+        log.info('')
+
+        tests = {
+            'cwd' : ( ['()', leaf().cwd ],  ['', leaf.cwd ] ),
+            'home': ( ['()', leaf().home],  ['', leaf.home] ),
+        }
+
+        for key, syntaxes in tests.items():
+
+            for liste in syntaxes:
+
+                msg = f'FileSystemLeaf.Path{liste[0]}.{key}() :'
+                fct = liste[1]
+
+                skull.shw(msg)
+                skull.shw('~' * len(msg))
+                skull.shw('')
+                skull.shw(f'=> {key} ( @MEMOIRE ) = {fct}')
+                skull.shw(f'=> {key} (   TYPE   ) = {type(fct)}')
+
+                try:
+                    skull.shw(f'=> {key} (  VALEUR  ) = {fct()}')
+
+                except AttributeError as e:
+                    skull.shw(f'=> {key} (  VALEUR  ) = ERREUR {type(e)}')
+                    skull.shw(f'{e}')
+
+                skull.shw('')
+                skull.shw('')
+
+            input("--- PAUSE avant la syntaxe suivante ---")
+            print()
 
 
     # #######################################################################
