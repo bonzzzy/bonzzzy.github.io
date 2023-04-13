@@ -43,6 +43,10 @@ import urllib.error
 
 if ___debug___:
 
+    import gc
+    import ctypes
+    import pprint
+
     # L'utilisation de traceback.print_exc(), traceback.format_exc(), ... est
     # généralement utile pour le débogage et le développement, mais ne devrait
     # pas être utilisée dans du code de production pour des raisons de sécurité.
@@ -116,7 +120,8 @@ walking_via_scandir = 'os.scandir'
 #
 # Les différentes PARTIES sont :
 #
-#   - CONSTANTES et fonctions générales ( _show_(), _show_stack_(), etc )
+#   - CONSTANTES et fonctions générales ( _pause_(), _show_(), _show_stack_(),
+#       _find_var_names_(), etc )
 #
 #   - Définition et fonctions des classes FileSystemTree + _FileSystemLeaf
 #
@@ -293,6 +298,27 @@ filetype_to_coding = {
 }
 
 
+# Pour introduire une PAUSE dans l'exécution... qui ne
+# reprendra que lorsque l'utilisateur aura appuyé sur
+# < RETURN >.
+#
+margin = 4 * " "
+
+def _pause_(
+    msg: str = 'PAUSE',
+    car: str = '=',
+    #indent: str = ''
+    indent: str = margin
+    ):
+    """ Pour introduire une PAUSE dans l'exécution.
+    """
+
+    print()
+    print()
+    input(indent + 9*car + ' ' + msg + ' ' + 9*car)
+    print()
+
+
 # Fonction d'affichage.
 #
 def _show_(msg, journal = None):
@@ -352,6 +378,225 @@ else:
                 journal.debug("\t\t%s", line)
 
         journal.debug('')
+
+
+# Fonctions d'INSPECTION des VARIABLES.
+#
+try:
+    ctypes
+
+except NameError:
+
+    def _find_var_refcounts_(obj, pure=True) -> (int, int):
+
+        return -1, -1
+
+    def _find_var_names_(obj, ref=None) -> (str, str, str):
+
+        return None, None, None
+
+else:
+
+    # We use ctypes module to access our unreachable objects by memory address.
+    #
+    # Cf https://rushter.com/blog/python-garbage-collector/
+    # ie 20230411 - GARBAGE collection + DEL keyword = Things you need to know*
+    # in _Know\Info\Dvpt\Réalisation\Langages\Python\- et - Allocation de MÉMOIRE.rar
+    #
+    class PyObject(ctypes.Structure):
+
+        _fields_ = [("refcnt", ctypes.c_long)]
+
+
+    def _find_var_refcounts_(
+        obj: object,
+        pure: bool = True
+        ) -> (int, int):
+        """ Pour trouver le nombre de références vers l'espace mémoire
+        désigné ( pointé ) par la variable OBJ.
+
+        :param obj: l'objet dont nous voulons connaître le nombre de
+        références pointées vers son espace mémoire.
+
+        :param pure: faut-il corriger ou pas les nombres trouvés des
+        références créées par l'appel à _find_var_refcounts_().
+
+        :return: le tuplet formé par :
+
+            * le nombre trouvé via le module ctypes auquel on fournit
+        l'adresse [ id() ] de l'objet,
+
+            * le nombre trouvé via sys.getrefcount().
+
+        ATTENTION : Aux nombres renvoyés sont soustraites les références
+        provoquées par l'appel à cette fonction si « pure == True ».
+        """
+    
+        # Puisque nous n'écrivons pas :
+        #
+        #   PyObject.from_address(id(obj)).refcnt
+        #
+        # ... nous aurons normalement :
+        #
+        #   system_counts = memory_counts + 1.
+        #
+        # RQ : dans la version CPython de Python, la fonction
+        # id() renvoie l'identifiant unique d'un objet Python,
+        # qui se trouve aussi être son adresse mémoire...
+        #
+        memory_adress = id(obj)
+        memory_counts = PyObject.from_address(memory_adress).refcnt
+        system_counts = sys.getrefcount(obj)
+
+        # Afin de corriger ces nombres des références générées
+        # par l'appel à cette fonction, nous soustrayons :
+        #
+        #   . -1 au premier car l'appel _find_var_refcounts_(obj)
+        #       a ajouté 1 référence vers l'espace mémoire « obj »,
+        #
+        #   . -2 au second pour la même raison + le fait que l'appel
+        #       sys.getrefcount(obj) a lui aussi ajouté 1 référence.
+        #
+        if pure:
+            return memory_counts - 1, system_counts - 2
+
+        else:
+            return memory_counts, system_counts
+
+
+    def _find_var_names_(
+            obj: object,
+            ref: dict = None
+            ) -> (str, str, str):
+        """ Pour retrouver le(s) nom(s) de la variable qui contient
+        l'objet passé en paramètre.
+    
+        D'une part, nous rechercherons en premier lieu l'objet dans
+        le dictionnaire de variables « ref » passé en paramètre ( ie
+        un dictionnaire du type « globals() » par exemple ). Nous en
+        extrairons alors un 1er nom de la variable.
+    
+        Si « obj » est du type class, method, fonction, ..., nous
+        fournirons ses champs __name__ & __qualname__ ( i-e un nom
+        du type « classe.name » ).
+    
+        :return: le nom de la variable contenant cet objet ( tel que
+        il est décrit dans le dictionnaire ) et, éventuellement, ses
+        __name__ et « qualified name » ( tels que cet objet les sait
+        peut-être ).
+        """
+
+        my_name = None
+        my_inside_name = None
+        my_qualified_name = None
+
+        if ref is None:
+            ref = globals()
+
+        if obj is not None:
+
+            # Si « obj » est du type class, method, fonction, ..., il
+            # possède des réponses dans ses entrailles :
+            #
+            #   Cf https://docs.python.org/3/library/inspect.html#types-and-members
+            #
+            if hasattr(obj, '__name__'):
+
+                my_inside_name = obj.__name__
+                my_qualified_name = obj.__qualname__
+
+            # Puis, nous cherchons dans le dictionnaire référence le
+            # nom.
+            #
+            # Si « obj » est une variable simple, nous n'aurons, par
+            # contre, aucun « qualified name » à fournir.
+            #
+            for k, v in ref.items():
+
+                # On recherche OBJ lui-même dans le dictionnaire des
+                # variables fourni, et ce afin de retrouver son nom
+                # de variable ( t0 ? toto ? path ? ).
+                #
+                # C'est la seule façon que nous ayions trouvée pour
+                # connaître le nom de la variable qui désigne un certain
+                # objet. En effet :
+                #
+                #   « obj.__name__ » N'EXISTE PAS !!!
+
+
+                # 1ère méthode : l'opérateur « = ».
+                # ~~~~~~~~~~~~~~
+                # 1ère méthode essayée pour retrouver OBJ i-e on le
+                # compare via l'opérateur « = » à chaque valeur des
+                # clefs du dictionnaire. Si la comparaison renvoie
+                # VRAI, alors les 2 adresses mémoires sont les mêmes
+                # et les objets sont les mêmes. DONC le NOM de OBJ
+                # est la CLEF...
+                #
+                # !!!   Cette MÉTHODE est OK : renvoie le bon nom... !!!
+                #
+                #if obj == v:
+
+
+                # 2ème méthode : l'opérateur « is ».
+                # ~~~~~~~~~~~~~~
+                # Cf https://docs.python.org/3/reference/datamodel.html#objects-values-and-types
+                #
+                #   The ‘is’ operator compares the identity of two objects
+                #
+                # Cf https://docs.python.org/3/reference/expressions.html#is
+                #
+                #   The operators is and is not test for an object’s identity:
+                #   x is y is true if and only if x and y are the same object.
+                #
+                # !!!   Cette MÉTHODE est OK : renvoie le bon nom... !!!
+                #
+                # Au regard de la définition de l'opérateur, elle est
+                # très certainement plus correcte que la précédente !!!
+                #
+                if obj is v:
+
+
+                # 3ème méthode : la fonction « id() ».
+                # ~~~~~~~~~~~~~~
+                # Cf https://docs.python.org/3/reference/datamodel.html#objects-values-and-types
+                #
+                #   the id() function returns an integer representing its identity.
+                #
+                # Cf https://docs.python.org/3/library/functions.html#id
+                #
+                #   Return the “identity” of an object. This is an integer which is
+                #   guaranteed to be unique and constant for this object during its
+                #   lifetime. Two objects with non-overlapping lifetimes may have the
+                #   same id() value.
+                #
+                #   CPython implementation detail: This is the address of the object
+                #   in memory.
+                #
+                # !!!   Cette MÉTHODE est OK : renvoie le bon nom... !!!
+                #
+                # Au regard de la définition de l'opérateur « is », il
+                # est très certainement basé sur la la fonction « id() ».
+                # Cette méthode est donc la plus basique, mais elle est
+                # moins lisible que la précédente...
+                #
+                #if id(obj) == id(v):
+
+                    my_name = k
+
+                    # Si l'on retire le « break » ci-dessous, et que l'on
+                    # transforme « my_name » en une liste « my_names », on
+                    # pourra alors retourner à l'appelant tous les noms de
+                    # variables du dictionnaire de référence qui pointent
+                    # vers l'objet recherché, et non le seul premier...
+                    #
+                    # Il faudra alors changer aussi la ligne ci-dessus en :
+                    #
+                    #   my_names.append(k)
+                    #
+                    break
+
+        return my_name, my_inside_name, my_qualified_name
 
 
 # ---------------------------------------------------------------------------
@@ -1222,6 +1467,9 @@ class FileSystemTree:
         n'est rien d'autre qu'un ALIAS vers le module PATHLIB !!!
     """
 
+    _tree_counter = 0
+    _tree_last = None
+
     def __new__(
         cls,
         *args,
@@ -1234,7 +1482,7 @@ class FileSystemTree:
 
         write_in_log = _show_ if log_file is None else log_file.debug
         write_in_log("Type de GESTION des FICHIERS :")
-        write_in_log('==============================')
+        write_in_log("==============================")
 
 
         # Nous allons dès maintenant importer le module pathlib
@@ -1295,10 +1543,123 @@ class FileSystemTree:
             # Nous créons un objet FileSystemTree qui sera en
             # charge de la gestion des disques et fichiers.
             #
-            write_in_log("\tNous créons un objet FileSystemTree.")
+            # Nous incrémentons alors le compteur du nombre
+            # de ces objets créés, et nous retenons l'adresse
+            # du dernier de ces objets créés.
+            #
+            # Ces 2 données sont utilisées dans un seul but :
+            # savoir s'il n'y a qu'un seul objet FileSystemTree
+            # en cours d'utilisation, ou plusieurs ( et donc
+            # connaître cet objet s'il est le seul ).
+            #
+            # Ainsi, si nous sommes dans le premier cas, nous
+            # utiliserons cet objet en cas d'appel du type:
+            #
+            #   FileSystemTree.Path._cwd()
+            #   FileSystemTree.Path._home()
+            #
+            # En effet, ces syntaxes sont finalement autorisées
+            # grâce aux mécanismes Python des ATTRIBUTS d'une
+            # MÉTHODE ( au niveau CLASSE et non instance ) :
+            #
+            #   Cf ci-dessous notre méthode _fake_cwd() à « def _fake_cwd ».
+            #
+            # Cf ci-dessous les rmqs à :
+            #
+            #   « On définit les deux ATTRIBUTS de la MÉTHODE Path qui vont nous »
+            #
+            # Nos méthodes _cwd() et _home() n'étant pas des
+            # méthodes de classe, nous avons besoin d'1 objet
+            # FileSystemTree pour les exécuter.
+            #
+            # D'où la nécessité de ces 2 variables !!! C-a-d
+            # afin de pouvoir au moins renvoyer CWD et HOME
+            # si 1 seul FileSystemTree existe.
+            #
+            # Cf, dans « def _fake_cwd », les rmqs à :
+            #
+            #   "RQ : Dans le cas où seul un objet « FileSystemTree » existe"
+            #
+            FileSystemTree._tree_counter += 1
+            FileSystemTree._tree_last = object.__new__(cls)
+            #
+            # Nous aurions pu conserver la liste des objets
+            # FileSystemTree créés, MAIS conserver une telle
+            # liste implique que l'on conserve au moins une
+            # référence vers chaque objet FileSystemTree et
+            # donc PAS de GARBAGE COLLECTING de ceux-ci !!!
+
+            write_in_log("\tNous CRÉONS un objet FileSystemTree.")
+            write_in_log(f"\tNbre d'objets en vie = {FileSystemTree._tree_counter}")
             write_in_log('')
 
-            return object.__new__(cls)
+            return FileSystemTree._tree_last
+
+
+    def __del__(self):
+        """ DESTRUCTEUR de la classe FileSystemTree.
+        """
+
+        # La tâche du destructeur est simple : décrémenter
+        # d'un le nombre des objets FileSystemTree encore
+        # en vie...
+        #
+        # Cf ci-dessus dans notre « __new__ », les rmqs à :
+        #
+        #   "Création d'un objet FileSystemTree dans les autres cas :"
+        #
+        FileSystemTree._tree_counter -= 1
+
+        log_debug = self.write_in_log
+        log_debug("Type de GESTION des FICHIERS :")
+        log_debug("==============================")
+        log_debug("\tNous DÉTRUISONS un objet FileSystemTree !!!")
+        log_debug(f"\tNbre d'objets en vie = {FileSystemTree._tree_counter}")
+        log_debug('')
+
+        if FileSystemTree._tree_last is self:
+
+            # Cette branche ne doit normalement PAS être
+            # POSSIBLE !!!
+            #
+            # En effet, si « FileSystemTree._tree_last »
+            # pointe sur self, alors cette partie de la
+            # mémoire ne sera pas détruite car il y aura
+            # toujours une référence vers elle-même !!!
+            #
+            # Cf, dans « def _fake_cwd », les rmqs à :
+            #
+            #   "RQ : Dans le cas où seul un objet « FileSystemTree » existe"
+            #
+            # Pour autant, nous avons conservé ce code
+            # en cas de BUG, afin de le détecter plus
+            # facilement.
+            #
+            #FileSystemTree._tree_last = None
+
+            msg = (
+                """\n\n"""
+                """     =============\n"""
+                """     ATTENTION !!!\n"""
+                """     =============\n\n"""
+                """         Objet « FileSystemTree » en cours de destruction :\n\n"""
+               f"""             {self}\n\n"""
+                """         Pourtant, « FileSystemTree._tree_last » le référence encore.\n\n"""
+                """         PB de GARBAGE COLLECTING ???\n"""
+            )
+
+            # Finalement, nous ne générons pas d'exception
+            # car ce cas est possible lors de la fin de ce
+            # script, quand le tout dernier FileSystemTree
+            # est détruit par le système !!!
+            #
+            # Nous affichons donc simplement un message d'
+            # avertissement, pour laisser trace de ce bug
+            # potentiel dans un autre cas que la fin du
+            # script...
+            #
+            #raise AssertionError(msg)
+            log_debug(f"{msg}")
 
 
     def __init__(
@@ -1391,10 +1752,10 @@ class FileSystemTree:
             #
             # C'est pathlib.Path qui réalisera ces créations.
             #
-                log_debug('')
-                log_debug('\tNous SURCHARGEONS notre méthode PATH !')
-                log_debug('')
-                self.Path = pathlib.Path
+            log_debug('')
+            log_debug('\tNous SURCHARGEONS notre méthode PATH !')
+            log_debug('')
+            self.Path = pathlib.Path
 
         if not self.pathlib_import:
 
@@ -1689,10 +2050,21 @@ class FileSystemTree:
         raise AttributeError(msg)
 
 
+    # Nous avons convervé l'écriture :
+    #
+    #   _fake_cwd(*args, **kwargs)
+    #
+    # ... afin de pouvoir tester différents cas possibles d'
+    # ATTRIBUTS de la MÉTHODE.
+    #
+    # Cf ci-dessous les rmqs à :
+    #
+    #   « On définit les deux ATTRIBUTS de la MÉTHODE Path qui vont nous »
+    #
     @classmethod
     #def _fake_cwd():
     #def _fake_cwd(cls):
-    def _fake_cwd(*args, **kwargs):
+    def _fake_cwd(*args, **kwargs) -> object:
         """ Permet d'afficher un avertissement lorsque la
         syntaxe FileSystemTree.Path.cwd() est écrite dans
         un contexte incorrect.
@@ -1723,22 +2095,74 @@ class FileSystemTree:
         _FileSystemLeaf, ie ci-dessous à « def cwd ».
         """
 
-        # Nous avons convervé l'écriture :
+        # Si un seul objet FileSystemTree existe actuellement en
+        # mémoire alors, et seulement alors, nous pouvons renvoyer
+        # le CWD demandé, donc nous le faisons !!!
         #
-        #   _fake_cwd(*args, **kwargs)
+        # En effet, dans ce cas, nous connaissons l'adresse de cet
+        # objet ( en tout cas nous croyions la connaître puisque
+        # nous supposons qu'elle est contenue dans _tree_last i.e
+        # qu'il s'agit du dernier objet créé... ).
         #
-        # ... afin de pouvoir tester différents cas possibles d'
-        # ATTRIBUTS de la MÉTHODE.
+        # Nous pouvons donc utiliser cet objet FileSystemTree pour
+        # créer un objet FileSystemLeaf qui contiendra le CWD et qui
+        # aura ce FileSystemTree pour parent.
         #
-        # Cf ci-dessous les rmqs à :
+        # RQ : Dans le cas où seul un objet « FileSystemTree » existe
+        # en mémoire, se peut-il que le dernier objet FileSystemTree
+        # créé ne soit pas ce seul objet FileSystemTree en mémoire ?
         #
-        #   « On définit les deux ATTRIBUTS de la MÉTHODE Path qui vont nous »
+        # Cela pourrait-il se produire dans le cas où :
         #
-        if args:
+        #   - création d'un FileSystemTree n°1 -
+        #   - _tree_last = < FileSystemTree n°1 >
+        #   - création d'un FileSystemTree n°2 -
+        #   - _tree_last = < FileSystemTree n°2 >
+        #   - utilisation du FileSystemTree n°2 -
+        #   - destruction du FileSystemTree n°2 -
+        #   - _tree_last = pointe sur du vide ???
+        #   - BUG sur l'appel _tree_last._cwd ???
+        #
+        # Ceci ne devrait pas arriver « naturellement » via une
+        # exécution du Garbage Collector : « _tree_last » étant
+        # une référence vers l'espace mémoire n°2, il ne pourra
+        # être nettoyé.
+        #
+        # Ceci pourrait-il alors arriver si l'opération « DEL »
+        # est lancée sur l'espace mémoire de « _tree_last » ? I-e
+        # si l'on écrit qq ch comme « DEL < FileSystemTree n°2 > ».
+        #
+        # La réponse est :
+        #
+        #   NON !!!
+        #
+        # ... et ce d'après des tests sur le Garbage Collector.
+        #
+        #   Cf « + TESTS du GARBAGE collector.py »
+        #   de « - et - Allocation de MÉMOIRE.rar »
+        #   in _Know\Info\Dvpt\Réalisation\Langages\Python
+        #
+        # Ainsi, tant que « FileSystemTree._tree_last » référence
+        # un espace mémoire, même si l'on lance l'opération DEL
+        # sur cet espace, rien ne se passera : la méthode __del__
+        # de l'objet contenu ne sera pas lancée...
+        #
+        # DONC s'il n'y a QU'UN SEUL OBJET FileSystemTree, alors
+        # c'est forcément celui déisgné par « _tree_last » !
+        #
+        # Sinon, notre compteur d'objets FileSystemTree vaudrait
+        # au moins 2...
+        #
+        if FileSystemTree._tree_counter == 1:
+            return FileSystemTree._tree_last._cwd()
+
+        elif args:
             args[0]._syntax_error('cwd', locals())
 
         else:
             FileSystemTree._syntax_error('cwd', locals())
+
+        return None
 
 
     @classmethod
@@ -1747,11 +2171,16 @@ class FileSystemTree:
         syntaxe FileSystemTree.Path.home().
         """
 
-        if args:
+        if FileSystemTree._tree_counter == 1:
+            return FileSystemTree._tree_last._home()
+
+        elif args:
             args[0]._syntax_error('home', locals())
 
         else:
             FileSystemTree._syntax_error('home', locals())
+
+        return None
 
 
     #def node ||-> Pour compatibilité avec pathlib, node est devenu Path.
@@ -2195,6 +2624,7 @@ class FileSystemTree:
                     location = self._flavour.join(args_str)
 
                 except TypeError:
+
                     raise TypeError(
                         "Unknown list of path parts : {}".format(args)
                         )
@@ -4220,6 +4650,7 @@ class FileSystemTree:
                 # émuler les méthodes de PATHLIB.
                 #
                 if self.is_file():
+
                     raise FileExistsError
 
                 else:
@@ -6351,6 +6782,7 @@ class ScriptSkeleton:
             if retries <= 0:
 
                 if raise_on_retry_error:
+
                     raise ValueError('Too much retry...')
 
                 else:
@@ -6771,21 +7203,222 @@ class ScriptSkeleton:
                 log_file = log
                 )
 
-            # Si l'on a changé le type de stockage de la description
-            # des noeuds de notre système de fichier ( pathlib.Path
-            # vs _FileSystemLeaf ) alors nous convertissons dans le
-            # dictionnaire « paths_and_miscellaneous » les valeurs
-            # qui en auraient besoin !!!
-            #
-            #   Cf « ( ! ) ATTENTION ( ! ) : Choix a été fait de stocker »
-            #
             tree_new = self.files
+
+            # On inspecte les références à l'espace mémoire occupé par
+            # la variable « tree_old » ( ie l'ancien FileSystemTree ).
+            #
+            # Et ceci :
+            #
+            #   AVANT libération des _FileSystemLeaf dont nous avons
+            #   la trace.
+            #
+            # RQ : FileSystemTree pourrait garder la liste des objets
+            # _FileSystemLeaf créé, mais cela créerait vers chacun d'
+            # eux une référence qui bloquerait toute action du ramasse
+            # -miettes de Python !!!
+            #
+            if ___debug___:
+
+                # On lance le Garbage Collector pour se débarrasser
+                # des parasites type l'instruction ci-dessus :
+                #
+                #   node_type_old = type(tree_old.Path())
+                #
+                # ... qui a créé un objet _FileSystemLeaf non nommé
+                # et inatteignable.
+                #
+                # ( sinon ce Garbage Collector ne sera probablement
+                #   pas lancé avant la fin de la méthode... )
+                #
+                gc_level = gc.get_debug()
+                gc.set_debug(gc.DEBUG_LEAK)
+                gc.collect()
+
+                #msg = pprint.pformat(gc.garbage, indent=33)
+                #log.debug(f"GC uncollectables objects : {msg}")
+                #log.debug('')
+
+                # Le décompte ci-dessous contient la référence faite
+                # par « tree_old » lui-même !!! Donc on soustrait 1
+                # au décompte trouvé afin que cette référence ne soit
+                # pas prise en compte...
+                #
+                memory_refs = _find_var_refcounts_(tree_old)[0] - 1
+
+                #log.debug(f"Brand new FileSystemTree  : « tree_new » is {repr(tree_new)}")
+                #log.debug(f"Brand new FileSystemTree  : « tree_new » address   = {id(tree_new)}")
+                #log.debug('')
+
+                log.debug(f"Deprecated FileSystemTree : « tree_old » is {repr(tree_old)}")
+                log.debug(f"Deprecated FileSystemTree : « tree_old » address   = {id(tree_old)}")
+                log.debug(f"Deprecated FileSystemTree : _find_var_refcounts_() = {memory_refs}")
+
+                # On retrouve ces références, s'il y en a, puis nous
+                # les affichons.
+                #
+                if memory_refs:
+
+                    referrers = gc.get_referrers(tree_old)
+                    msg = pprint.pformat(referrers, indent=33)
+
+                    #log.debug(f"Deprecated FileSystemTree : gc.get_referrers       =\n{msg}")
+                    #log.debug('')
+
+                    # Nous souhaitons exclure « tree_old » lui-même de
+                    # cette liste avant un affichage plus précis.
+                    #
+                    # Comme nous n'arrivions pas à exclure « tree_old »
+                    # via les 2 compréhensions de liste ci-dessous :
+                    #
+                    #restricted = [r for r in referrers if not r is tree_old]
+                    #restricted = [r for r in referrers if id(r) != id(tree_old)]
+                    #
+                    # ... nous sommes passés à la suivante, plus large
+                    # dans son sens :
+                    #
+                    #restricted = [r for r in referrers if type(r) != FileSystemTree]
+                    #
+                    # ... et, alors, dans la liste de ces « referrers »,
+                    # l'étrange et non localisable item du type :
+                    #
+                    #   <cell at 0x00000249579B20B0: FileSystemTree object at 0x00000249579E4690>
+                    #
+                    # ... qui y apparaissait, a disparu de la liste :
+                    #
+                    #   « restricted »
+                    #
+                    # ... tout comme de la liste :
+                    #
+                    #   « referrers » !!!
+                    #
+                    # Nous avons alors remplacé la compréhension de
+                    # liste par:
+                    #
+                    #restricted = referrers
+                    #
+                    # ... et cette ligne perturbante <cell at xxx>
+                    # n'a toujours pas réapparu !!!
+                    #
+                    # Visiblement, en prévision d'1 des 2 premières
+                    # compréhensions de liste utilisant « tree_old »,
+                    # Python créait et conservait une variable locale
+                    # fantôme que gc.get_referrers() affichait !!!
+                    #
+                    # OU, PLUTÔT, comme indiqué dans la documentation
+                    # de « gc.get_referrers() » :
+                    #
+                    #   Warning
+                    #   Care must be taken when using objects returned by get_referrers()
+                    #   because some of them could still be under construction and hence
+                    #   in a temporarily invalid state. Avoid using get_referrers() for
+                    #   any purpose other than debugging. 
+                    #
+                    #   Cf https://docs.python.org/3/library/gc.html#gc.get_referrers
+                    #
+                    # Nous avons donc supprimé tout code visant à
+                    # enlever « tree_old » de la liste car, en fait :
+                    #
+                    #   « tree_old » EST PAR CONSTRUCTION ABSENT DE
+                    #   LA LISTE gc.get_referrers( « tree_old » ) !!!
+                    #
+                    #msg = pprint.pformat(restricted, indent=33)
+                    #log.debug(f"Restricted :\n{msg}")
+                    #log.debug('')
+
+                    log.debug(f"Deprecated FileSystemTree : get_referrers (detail) =")
+
+                    #for r in restricted:
+                    for r in referrers:
+
+                        # ICI aussi « gc.get_referrers » donne de
+                        # CURIEUSES INFORMATIONS suivant la ligne
+                        # ci-dessous décommentée...
+                        #
+                        # Ainsi, si locals() est envoyé à notre fct
+                        # _find_var_names_(), le prochain appel à
+                        # « gc.get_referrers », celui situé APRÈS la
+                        # libération des _FileSystemLeaf, donnera une
+                        # référence étrange pointant vers « tree_old »
+                        # i-e qq ch comme :
+                        #
+                        #   Var TYPE     = <class 'dict'>
+                        #   [..]
+                        #   Var __repr__ = {'self': <__main__.ScriptSkeleton object at 0x000001E1AE3847D0>,
+                        #
+                        # ... alors que ScriptSkeleton est loin d'être
+                        # un dictionnaire !!!
+                        #
+                        # Il s'agit probablement des « invalid state »
+                        # indiqué dans le WARNING de gc.get_referrers.
+                        #
+                        # Cf ci-dessus :
+                        #
+                        #   « OU PLUTÔT, comme indiqué dans la documentation »
+                        #
+                        #
+                        # =================
+                        # !!! ATTENTION !!!
+                        # =================
+                        #
+                        # POUR AUTANT, même quand cette référence étrange
+                        # est indiquée, AU SORTIR DE file_system_mode(),
+                        # que soit lancé ou non « gc.collect() », on voit
+                        # apparaître des messages provenant de la méthode
+                        # __del__ de FileSystemTree !!!
+                        #
+                        # DONC, en sortie de file_system_mode(), après mise
+                        # à jour des _FileSystemLeaf, aucune référence vers
+                        # l'ancien FileSystemTree n'existe, et celui-ci est
+                        # éliminé par le Garbage Collector...
+                        #
+                        # Au final, nous avons supprimé la source de cette
+                        # référence étrange, en n'utilisant plus locals(),
+                        # même si cette étrangeté n'empêchait en rien la
+                        # disparition de l'ancien FileSystemTree...
+                        #
+                        #r_names = _find_var_names_(r, locals())
+                        r_names = _find_var_names_(r)
+
+                        log.debug('')
+                        log.debug(f"{margin}Var TYPE     = {type(r)}")
+                        log.debug(f"{margin}Var _NAMES_  = {r_names}")
+                        log.debug(f"{margin}Var address  = {id(r)}")
+                        log.debug(f"{margin}Var __repr__ = {repr(r)}")
+                        log.debug(f"{margin}Var __str__  = {r}")
+
+                #_pause_()
+                log.debug('')
 
             #node_type_new = type(tree_new.node())
             node_type_new = type(tree_new.Path())
+            my_dict = self.paths_and_miscellaneous
 
             if node_type_new != node_type_old:
 
+                # Si l'on a changé le type de stockage de la description
+                # des noeuds de notre système de fichier ( pathlib.Path
+                # vs _FileSystemLeaf ) alors nous convertissons dans le
+                # dictionnaire « paths_and_miscellaneous » les valeurs
+                # qui en auraient besoin !!!
+                #
+                #   Cf « ( ! ) ATTENTION ( ! ) : Choix a été fait de stocker »
+                #
+                #
+                # =================
+                # !!! ATTENTION !!!
+                # =================
+                #
+                # PAR AILLEURS, si nous sommes dans le cas d'1 conversion
+                # de _FileSystemLeaf en pathlib.Path, cette conversion va
+                # libérer les _FileSystemLeaf existantes, et ces dernières
+                # références vers l'ancien FileSystemTree disparaîtront...
+                #
+                # DONC cet ancien FileSystemTree sera libéré, dès la fin
+                # de « def file_system_mode », lorsque « tree_old » sera
+                # détruite ( puisqu'elle sera la dernière référence à ce
+                # vieux FileSystemTree ).
+                #
                 log.critical('')
                 log.critical("\t~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
                 log.critical("\tMODIFICATION DU TYPE DES NOEUDS !!!")
@@ -6793,10 +7426,10 @@ class ScriptSkeleton:
                 log.critical("\t... = ATTENTION AUX EFFETS DE BORDS")
                 log.critical('')
 
-                my_dict = self.paths_and_miscellaneous
-
                 for key, value in my_dict.items():
+
                     if type(value) == node_type_old:
+
                         log.critical("\tConversion de « %s »...", key)
 
                         #my_dict[key] = tree_new.node(str(value))
@@ -6805,6 +7438,151 @@ class ScriptSkeleton:
                 log.critical("\t~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
                 log.critical('')
                 log.critical('')
+
+            elif node_type_new == FileSystemTree._FileSystemLeaf:
+
+                # Si le type de stockage est tjrs le même, et que ce sont
+                # des objets _FileSystemLeaf, alors nous mettons à jour
+                # leur pointeur vers le nouveau FileSystemTree dont elles
+                # dépendent.
+                #
+                #
+                # =================
+                # !!! ATTENTION !!!
+                # =================
+                #
+                # Cela aura pour effet de libérer toutes les références
+                # vers l'ancien FileSystemLeaf, et le Garbage Collector
+                # l'éliminera alors en sortie de cette méthode.
+                #
+                log.debug('')
+                log.debug("\t~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+                log.debug("\tMODIFICATION DU PÈRE DES NOEUDS !!!")
+                log.debug("\t~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+                log.debug("\t... = ATTENTION AUX EFFETS DE BORDS")
+                log.debug('')
+
+                for key, value in my_dict.items():
+
+                    if type(value) == node_type_new:
+
+                        log.debug("\tMise à jour de « %s »...", key)
+
+                        my_dict[key].tree = tree_new
+
+                log.debug("\t~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+                log.debug('')
+                log.debug('')
+
+            # On inspecte les références à l'espace mémoire visé par
+            # la variable « tree_old » ( ie l'ancien FileSystemTree ).
+            #
+            # Et ceci :
+            #
+            #   APRÈS libération des _FileSystemLeaf dont nous avions
+            #   la trace.
+            #
+            if ___debug___:
+
+                # On lance le Garbage Collector pour se débarrasser
+                # des parasites qui auraient été créés ci-dessus.
+                #
+                # ( sinon ce Garbage Collector ne sera probablement
+                #   pas lancé avant la fin de la méthode... )
+                #
+                gc.collect()
+                gc.set_debug(gc_level)
+
+                memory_refs = _find_var_refcounts_(tree_old)[0] - 1
+
+                log.debug(f"Deprecated FileSystemTree : « tree_old » is {repr(tree_old)}")
+                log.debug(f"Deprecated FileSystemTree : « tree_old » address   = {id(tree_old)}")
+                log.debug(f"Deprecated FileSystemTree : _find_var_refcounts_() = {memory_refs}")
+
+                # On retrouve ces références, s'il y en a.
+                #
+                if memory_refs:
+
+                    referrers = gc.get_referrers(tree_old)
+
+                    #msg = pprint.pformat(referrers, indent=33)
+                    #log.debug(f"Deprecated FileSystemTree : gc.get_referrers       =\n{msg}")
+                    #log.debug('')
+
+                    log.debug(f"Deprecated FileSystemTree : get_referrers (detail) =")
+
+                    for r in referrers:
+
+                        r_names = _find_var_names_(r)
+
+                        log.debug('')
+                        log.debug(f"{margin}Var TYPE     = {type(r)}")
+                        log.debug(f"{margin}Var _NAMES_  = {r_names}")
+                        log.debug(f"{margin}Var address  = {id(r)}")
+                        log.debug(f"{margin}Var __repr__ = {repr(r)}")
+                        log.debug(f"{margin}Var __str__  = {r}")
+
+                #_pause_()
+                log.debug('')
+
+            # On libère notre ancien FileSystemTree qui est devenu
+            # inutile. Cela nous permettra, par ailleurs, que le bon
+            # décompte du nombre de FileSystemTree « en vie » soit
+            # tenu.
+            #
+            # Cf ci-dessus dans notre « FileSystemTree.__new__ », les
+            # rmqs à :
+            #
+            #   "Création d'un objet FileSystemTree dans les autres cas :"
+            #
+            #
+            # =================
+            # !!! ATTENTION !!!
+            # =================
+            #
+            # Le code ci-dessous est INUTILE i-e :
+            #
+            #   del tree_old
+            #
+            # ... sauf peut-être en mode DEBUG, au cas où l'on veuille
+            # faire des tests supplémentaires.
+            #
+            # En effet, « tree_old » est une variable locale, qui va
+            # disparaître en même temps que cette méthode va se clore.
+            #
+            # « tree_old » étant la dernière référence vers l'ancien
+            # FileSystemTree, le Garbage Collector va l'effacer de la
+            # mémoire sans autre action de notre part...
+            #
+            # Et ceci puisque, d'après les tests, le Garbage Collector
+            # se lance en sortie de cette fonction, quoi qu'il en soit.
+            #
+            # Ce qui est LOGIQUE, puisqu'il doit nettoyer la mémoire de
+            # toutes les variables locales à cette méthode.
+            #
+            #
+            # =================
+            # !!! ATTENTION !!!
+            # =================
+            #
+            # FINALEMENT, pour l'instant, nous avons choisi de ne pas 
+            # exécuter la portion de code ci-dessous ( cf « if False » )
+            # ni donc le Garbage Collector, afin de nous retrouver en des
+            # conditions les plus normales d'exécution.
+            #
+            if False:
+            #if ___debug___:
+                
+                log.debug("Running « del tree_old » + GARBAGE COLLECTION...")
+                log.debug('')
+
+                del tree_old
+                gc.collect()
+
+            else:
+
+                log.debug("Neither « del tree_old » nor GARBAGE COLLECTION !")
+                log.debug('')
 
 
     def search_files_from_a_mask(
