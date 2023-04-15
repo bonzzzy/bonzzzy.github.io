@@ -298,27 +298,6 @@ filetype_to_coding = {
 }
 
 
-# Pour introduire une PAUSE dans l'exécution... qui ne
-# reprendra que lorsque l'utilisateur aura appuyé sur
-# < RETURN >.
-#
-margin = 4 * " "
-
-def _pause_(
-    msg: str = 'PAUSE',
-    car: str = '=',
-    #indent: str = ''
-    indent: str = margin
-    ):
-    """ Pour introduire une PAUSE dans l'exécution.
-    """
-
-    print()
-    print()
-    input(indent + 9*car + ' ' + msg + ' ' + 9*car)
-    print()
-
-
 # Fonction d'affichage.
 #
 def _show_(msg, journal = None):
@@ -332,6 +311,40 @@ def _show_(msg, journal = None):
 
     if journal is not None:
         journal.debug(msg_to_print)
+
+
+# Pour introduire une PAUSE dans l'exécution... qui ne
+# reprendra que lorsque l'utilisateur aura appuyé sur
+# < RETURN >.
+#
+margin = 4 * " "
+
+if ___debug___:
+
+    def _pause_(
+        msg: str = 'PAUSE',
+        car: str = '=',
+        #indent: str = '',
+        indent: str = margin,
+        before: int = 0,
+        b_line: object = print,     # function
+        after : int = 1,
+        a_line: object = print,     # function
+        ):
+        """ Pour introduire une PAUSE dans l'exécution.
+        """
+
+        for _ in range(0, before): b_line('')
+
+        input(indent + 9*car + ' ' + msg + ' ' + 9*car)
+
+        for _ in range(0, after): a_line('')
+
+else:
+
+    def _pause_(*args, **kwargs):
+
+        pass
 
 
 # Fonction d'affichage de la PILE d'EXÉCUTION.
@@ -6264,8 +6277,8 @@ class ScriptSkeleton:
                 #
                 if pause_to_make:
 
-                    input('PRESS ENTER TO CONTINUE...')
-                    print()
+                    _pause_("PRESS ENTER TO CONTINUE...",
+                            before=1, after=2)
 
                 # On a laissé le temps à l'utilisateur de
                 # consulter le fichier LOG. On peut donc
@@ -6620,8 +6633,7 @@ class ScriptSkeleton:
                 #
                 if delay_performed_by_system:
 
-                    input("J'attends...")
-                    print()
+                    _pause_("J'attends...")
 
                     # On annule l'arrêt si l'utilisateur l'a demandé.
                     #
@@ -7471,6 +7483,28 @@ class ScriptSkeleton:
                         #
                         # ... alors que ScriptSkeleton est loin d'être
                         # un dictionnaire !!!
+                        #
+                        # En fait, cette étranganté n'en est PAS DU
+                        # TOUT !!!
+                        #
+                        # Il ne s'agit pas d'un objet ScriptSkeleton
+                        # mais de son dictionnaire qui est ici désigné.
+                        #
+                        # < instance ScriptSkeleton >.__dict__ possède
+                        # en effet les couples clef-valeur suivant :
+                        #
+                        #   - 'self': <__main__.ScriptSkeleton object at 0x000001E1AE3847D0>,
+                        #   - ...
+                        #   - 'files' : <__main__.FileSystemTree object at 0x000001859F9148D0>,
+                        #   - ...
+                        #
+                        # ... et cette valeur de la clef 'files' qui
+                        # peut pointer vers un objet FileSystemTree !!!
+                        #
+                        # Ce qui est étrange, c'est que skeleton.files
+                        # pointe encore vers l'ancien FileSystemTree
+                        # alors que qq lignes plus haut, le nouveau
+                        # FileSystemTree a été réaffecté à self.files !!!
                         #
                         # Il s'agit probablement des « invalid state »
                         # indiqué dans le WARNING de gc.get_referrers.
@@ -9355,8 +9389,7 @@ if __name__ == "__main__":
                 skull.shw('')
                 skull.shw('')
 
-            input("--- PAUSE avant la syntaxe suivante ---")
-            print()
+            _pause_("PAUSE avant la syntaxe suivante", after=2)
 
 
     # #######################################################################
@@ -9625,10 +9658,9 @@ if __name__ == "__main__":
                     skull.shw(f'\t{n}')
 
                 skull.shw('')
+                skull.shw('')
 
-            print()
-            input("--- PAUSE avant la recherche suivante ---")
-            print()
+            _pause_("PAUSE avant la syntaxe suivante")
 
             log.info('')
             log.info('Version FNMATCH :')
@@ -9644,11 +9676,8 @@ if __name__ == "__main__":
             for n in sorted(our_dir._fake_iglob(**mask_dct)):
                 skull.shw(f'\t{n}')
 
-            skull.shw('')
-
-            print()
-            input("--- PAUSE avant la recherche suivante ---")
-            print()
+            _pause_("PAUSE avant la syntaxe suivante",
+                    before=2, b_line=skull.shw)
 
         # On appelle search_files_from_a_mask() pour
         # vérifier que Python n'y plante pas.
@@ -9729,9 +9758,10 @@ if __name__ == "__main__":
         for idx, s in enumerate(searches_todo, start=0):
 
             if idx > 0:
-                input("--- PAUSE avant la recherche suivante ---")
-                print()
-                print()
+                _pause_("pause avant la recherche suivante",
+                        car="-", indent=3*margin,
+                        before=2, b_line=skull.shw,
+                        after=2, a_line=skull.shw)
 
             files_found = skull.search_files_from_a_mask(
                 directory = s.dir,
@@ -9742,7 +9772,6 @@ if __name__ == "__main__":
             msg_find = 9 * ' ' + f'---> Fichier(s) trouvé(s) :'
             len_maxi = max(len(msg_dir), len(msg_find))
 
-            log.debug('')
             skull.shw('~' * len_maxi)
             skull.shw(msg_dir)
             skull.shw(msg_find)
@@ -9758,10 +9787,14 @@ if __name__ == "__main__":
 
             skull.shw('')
             skull.shw('')
+            skull.shw(77 * '-')
+
+        skull.shw('')
+        skull.shw('')
 
         user_answer = skull.ask_yes_or_no(
             f"Édition des fichiers {s.mask} ( via l'éditeur de TXT ) ?",
-            'oui'
+            'non'
             )
 
         if user_answer:
@@ -9935,22 +9968,22 @@ if __name__ == "__main__":
         with open(f_reference, "wt") as new_file:
             new_file.write(reference)
 
-        log.debug('')
         log.debug('Fichier de référence :')
         log.debug('~~~~~~~~~~~~~~~~~~~~~~')
         log.debug('«')
         log.debug('%s', reference)
         log.debug('»')
         log.debug('')
+        log.debug('')
 
         with open(f_reference, "rt") as new_file:
-            log.debug('')
             log.debug('Fichier de référence tel que converti en ENSEMBLE :')
             log.debug('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
             log.debug('«')
             for elt in set(new_file):
                 log.debug('%s', str(elt).rstrip('\r\n'))
             log.debug('»')
+            log.debug('')
             log.debug('')
 
 
@@ -9964,16 +9997,15 @@ if __name__ == "__main__":
         with open(f_transformation, "wt") as new_file:
             new_file.write(transformation)
 
-        log.debug('')
         log.debug('Fichier transformé :')
         log.debug('~~~~~~~~~~~~~~~~~~~~')
         log.debug('«')
         log.debug('%s', transformation)
         log.debug('»')
         log.debug('')
+        log.debug('')
 
         with open(f_transformation, "rt") as new_file:
-            log.debug('')
             log.debug('Fichier transformé tel que converti en ENSEMBLE :')
             log.debug('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
             log.debug('«')
@@ -9981,11 +10013,11 @@ if __name__ == "__main__":
                 log.debug('%s', str(elt).rstrip('\r\n'))
             log.debug('»')
             log.debug('')
+            log.debug('')
 
 
         # On compare les 2 fichiers : INTERSECTION.
         #
-        skull.shw('')
         skull.shw("RÉSULTAT de l'INTERSECTION des deux FICHIERS :")
         skull.shw('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
         skull.shw('«')
@@ -10000,11 +10032,11 @@ if __name__ == "__main__":
             skull.shw(str(elt).rstrip('\r\n'))
         skull.shw('»')
         skull.shw('')
+        skull.shw('')
 
 
         # On compare les 2 fichiers : DIFFÉRENCE / au fichier référence.
         #
-        skull.shw('')
         skull.shw('LIGNES de la RÉFÉRENCE NON PRÉSENTES dans le fichier transformé :')
         skull.shw('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
         skull.shw('«')
@@ -10019,6 +10051,7 @@ if __name__ == "__main__":
             skull.shw(str(elt).rstrip('\r\n'))
         skull.shw('»')
         skull.shw('')
+        skull.shw('')
 
 
         # On compare les 2 fichiers : DIFFÉRENCE / au 2ème fichier.
@@ -10026,7 +10059,6 @@ if __name__ == "__main__":
         # C-a-d que l'on va ici donner les lignes en plus dans le
         # 2ème fichier...
         #
-        skull.shw('')
         skull.shw('LIGNES AJOUTÉES / MODIFIÉES dans le FICHIER TRANSFORMÉ :')
         skull.shw('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
         skull.shw('«')
@@ -10041,11 +10073,11 @@ if __name__ == "__main__":
             skull.shw(str(elt).rstrip('\r\n'))
         skull.shw('»')
         skull.shw('')
+        skull.shw('')
 
 
         # On compare les 2 fichiers : DIFFÉRENCE SYMÉTRIQUE.
         #
-        skull.shw('')
         skull.shw('RÉSULTAT de la DIFFÉRENCE SYMÉTRIQUE entre les deux FICHIERS :')
         skull.shw('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
         skull.shw('«')
@@ -10059,6 +10091,7 @@ if __name__ == "__main__":
         for elt in intersection:
             skull.shw(str(elt).rstrip('\r\n'))
         skull.shw('»')
+        skull.shw('')
         skull.shw('')
 
 
@@ -10283,10 +10316,10 @@ if __name__ == "__main__":
             else:
                 log.info(f'path.as_uri()\t-> {uri}')
 
-            log.info('')
-
-            input("\t\t--- PAUSE avant la recherche suivante ---")
-            print()
+            _pause_("pause avant la recherche suivante",
+                    car="-", indent=3*margin,
+                    before=2, b_line=log.info,
+                    after=2, a_line=log.info)
 
             log.info(77 * '-')
             log.info('')
@@ -10680,7 +10713,7 @@ if __name__ == "__main__":
             # On marque une pause le temps que l'utilisateur puisse entendre
             # le son ( et donc que mplay32.exe puisse le jouer... ).
             #
-            input('Frapper <Entrée> une fois le son entendu...')
+            _pause_("Frapper <Entrée> une fois le son entendu...", after=0)
 
         else:
             skull.shw('Certains fichiers demandés sont ABSENTS !!!')
