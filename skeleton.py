@@ -1533,6 +1533,25 @@ class FileSystemTree:
             write_in_log("\t« pathlib » gèrera seul le système de fichiers !!!")
             write_in_log('')
 
+            # Nous libérons la référence à l'ancien FileSystemTree,
+            # s'il y en avait un, afin de ne pas créer une potentiel
+            # fuite de mémoire et que le Garbage Collector puisse si
+            # nécessaire l'effacer...
+            #
+            # Nous pouvons attribuer l'une ou l'autre des valeurs ci-
+            # dessous à _tree_last, les 2 sont logiques :
+            #
+            #    . « pathlib » car c'est le vrai nouveau gestionnaire
+            # du système de fichiers,
+            #
+            #    . « None » car aucun objet FileSystemTree n'a été ici
+            # instancié.
+            #
+            # Nous avons choisi la moins gourmande en mémoire : None.
+            #
+            #FileSystemTree._tree_last = pathlib
+            FileSystemTree._tree_last = None
+
             return pathlib
 
         else:
@@ -1600,6 +1619,8 @@ class FileSystemTree:
         """ DESTRUCTEUR de la classe FileSystemTree.
         """
 
+        log_debug = self.write_in_log
+
         # La tâche du destructeur est simple : décrémenter
         # d'un le nombre des objets FileSystemTree encore
         # en vie...
@@ -1610,56 +1631,147 @@ class FileSystemTree:
         #
         FileSystemTree._tree_counter -= 1
 
-        log_debug = self.write_in_log
-        log_debug("Type de GESTION des FICHIERS :")
-        log_debug("==============================")
-        log_debug("\tNous DÉTRUISONS un objet FileSystemTree !!!")
-        log_debug(f"\tNbre d'objets en vie = {FileSystemTree._tree_counter}")
-        log_debug('')
+        # S'il reste d'autres objets FileSystemTree, alors
+        # nous ne sommes pas en sortie de script.
+        #
+        # Nous pouvons donc afficher différentes infos.
+        #
+        if FileSystemTree._tree_counter:
 
-        if FileSystemTree._tree_last is self:
+            log_debug("Type de GESTION des FICHIERS :")
+            log_debug("==============================")
+            log_debug("\tNous DÉTRUISONS un objet FileSystemTree !!!")
+            log_debug(f"\tNbre d'objets en vie = {FileSystemTree._tree_counter}")
+            log_debug('')
 
-            # Cette branche ne doit normalement PAS être
-            # POSSIBLE !!!
-            #
-            # En effet, si « FileSystemTree._tree_last »
-            # pointe sur self, alors cette partie de la
-            # mémoire ne sera pas détruite car il y aura
-            # toujours une référence vers elle-même !!!
-            #
-            # Cf, dans « def _fake_cwd », les rmqs à :
-            #
-            #   "RQ : Dans le cas où seul un objet « FileSystemTree » existe"
-            #
-            # Pour autant, nous avons conservé ce code
-            # en cas de BUG, afin de le détecter plus
-            # facilement.
-            #
-            #FileSystemTree._tree_last = None
+            if FileSystemTree._tree_last is self:
+            
+                # Cette branche ne doit normalement PAS être
+                # POSSIBLE... !!!
+                #
+                #   En effet, si « FileSystemTree._tree_last »
+                #   pointe sur self, alors cette partie de la
+                #   mémoire ne sera pas détruite car il y aura
+                #   toujours une référence vers elle-même !!!
+                #
+                #   Cf, dans « def _fake_cwd », les rmqs à :
+                #
+                #       "RQ : Dans le cas où seul un objet « FileSystemTree » existe"
+                #
+                #   Pour autant, nous avons conservé ce code
+                #   en cas de BUG, afin de le détecter plus
+                #   facilement.
+                #
+                #
+                # Cette branche est seulement possible si ns
+                # sommes en SORTIE de SCRIPT !!!
+                #
+                #   Il est normal qu'en toute fin de script,
+                #   la dernière instance de FileSystemTree
+                #   soit détruite !!!
+                #
+                #   Mais nous avons déjà écarté ce cas car
+                #   ci-dessus est testé si _tree_counter est
+                #   nul ou pas.
+                #
+                msg = (
+                    """\n\n"""
+                    """     =============\n"""
+                    """     ATTENTION !!!\n"""
+                    """     =============\n\n"""
+                    """         Objet « FileSystemTree » en cours de destruction :\n\n"""
+                   f"""             {self}\n\n"""
+                    """         Pourtant, « FileSystemTree._tree_last » le référence encore.\n\n"""
+                    """         PB de GARBAGE COLLECTING ???\n"""
+                )
 
-            msg = (
-                """\n\n"""
-                """     =============\n"""
-                """     ATTENTION !!!\n"""
-                """     =============\n\n"""
-                """         Objet « FileSystemTree » en cours de destruction :\n\n"""
-               f"""             {self}\n\n"""
-                """         Pourtant, « FileSystemTree._tree_last » le référence encore.\n\n"""
-                """         PB de GARBAGE COLLECTING ???\n"""
-            )
+                # Nous levons donc simplement une exception,
+                # pour laisser trace de ce bug.
+                #
+                #FileSystemTree._tree_last = None
 
-            # Finalement, nous ne générons pas d'exception
-            # car ce cas est possible lors de la fin de ce
-            # script, quand le tout dernier FileSystemTree
-            # est détruit par le système !!!
+                raise AssertionError(msg)
+
+        # FileSystemTree._tree_counter vaut 0...
+        #
+        # ... ie le tout dernier FileSystemTree est détruit
+        # par l'interpréteur !
+        #
+        # C'est le signe que plus aucune instance n'est en
+        # mémoire & donc que notre parent ScriptSkeleton s'
+        # achève.
+        #
+        # Il ne doit ainsi y avoir comme références vivantes
+        # vers nous que :
+        #
+        #   . FileSystemTree._tree_last,
+        #
+        #   . < instance ScriptSkeleton >.tree,
+        #
+        #   . < instances _FileSystemLeaf >.tree.
+        #
+        #
+        # ATTENTION :
+        # ===========
+        #
+        # La portion de code ci-dessous s'exécute alors que,
+        # potentiellement, le LOG pourrait avoir été supprimé
+        # par ScriptSkeleton !!!
+        #
+        # Cf « def on_dit_au_revoir() » à :
+        #
+        #   « # ATTENTION : Cette limite dépassée, il »
+        #
+        # Écrire ici dans le LOG peut alors le recréer et il
+        # ne contiendra que les infos ci-dessous journalisées.
+        #
+        #
+        # REMARQUE :
+        # ==========
+        #
+        # La branche ci-dessous s'exécute aussi dans le cas où,
+        # via ScriptSkeleton.file_system_mode(), on modifie notre
+        # attribut self.with_pathlib vers le mode :
+        #
+        #   « pathlib_direct_via_module_only »
+        #
+        # ... ce qui provoque :
+        #
+        #   . pas de création d'un nouveau FileSystemTree,
+        #   . destruction de l'ancien FileSystemTree,
+        #   . FileSystemTree._tree_counter = 0,
+        #   . passage dans la branche ci-dessous...
+        #
+        # ... et nous pourrions alors journaliser les infos ci-
+        # dessous. Mais nous n'avons pas trouvé de moyen afin
+        # de distinguer la FIN de l'exécution de skeleton.py du
+        # cas ci-dessus décrit.
+        #
+        elif False:
+        #elif ___debug___:
+
+            # Nous allons afficher le nombre de références
+            # mémoire pointant vers nous-mêmes ( exceptée
+            # la variable self ).
             #
-            # Nous affichons donc simplement un message d'
-            # avertissement, pour laisser trace de ce bug
-            # potentiel dans un autre cas que la fin du
-            # script...
-            #
-            #raise AssertionError(msg)
-            log_debug(f"{msg}")
+            memory_refs = _find_var_refcounts_(self)[0] - 1
+
+            log_debug("Type de GESTION des FICHIERS :")
+            log_debug("==============================")
+            log_debug("\tNous DÉTRUISONS un objet FileSystemTree !!!")
+            log_debug(f"\tNbre d'objets en vie = {FileSystemTree._tree_counter}")
+            log_debug("\tIl s'agit du dernier objet FileSystemTree :")
+            log_debug('')
+            log_debug(f"\t\t. _find_var_refcounts_() = {memory_refs}")
+            log_debug('')
+
+            if memory_refs:
+
+                referrers = gc.get_referrers(self)
+                msg = pprint.pformat(referrers, indent=33)
+
+                log_debug(f"\t\t. gc.get_referrers       =\n{msg}")
+                log_debug('')
 
 
     def __init__(
@@ -1796,7 +1908,14 @@ class FileSystemTree:
 
         log_debug('\tGLOB\t\t= ' + str(glob))
         log_debug('')
- 
+
+
+    def __str__(self):
+
+        my_str = f"path[ {self.with_pathlib} ] + walk[ {self.walking_mode} ]"
+
+        return my_str
+
 
     def _register_log(
         self,
@@ -7246,12 +7365,16 @@ class ScriptSkeleton:
                 #
                 memory_refs = _find_var_refcounts_(tree_old)[0] - 1
 
-                #log.debug(f"Brand new FileSystemTree  : « tree_new » is {repr(tree_new)}")
-                #log.debug(f"Brand new FileSystemTree  : « tree_new » address   = {id(tree_new)}")
-                #log.debug('')
+                log.debug(f"Brand new FileSystemTree  : « tree_new » species   = {type(tree_new)}")
+                log.debug(f"Brand new FileSystemTree  : « tree_new » address   = {id(tree_new)}")
+		        #log.debug(f"Brand new FileSystemTree  : « tree_new » __repr__ = {repr(tree_new)}")
+                log.debug(f"Brand new FileSystemTree  : « tree_new » __str__   = {str(tree_new)}")
+                log.debug('')
 
-                log.debug(f"Deprecated FileSystemTree : « tree_old » is {repr(tree_old)}")
+                log.debug(f"Deprecated FileSystemTree : « tree_old » species   = {type(tree_old)}")
                 log.debug(f"Deprecated FileSystemTree : « tree_old » address   = {id(tree_old)}")
+                #log.debug(f"Deprecated FileSystemTree : « tree_old » __repr__ = {repr(tree_old)}")
+                log.debug(f"Deprecated FileSystemTree : « tree_old » __str__   = {str(tree_old)}")
                 log.debug(f"Deprecated FileSystemTree : _find_var_refcounts_() = {memory_refs}")
 
                 # On retrouve ces références, s'il y en a, puis nous
@@ -7260,8 +7383,8 @@ class ScriptSkeleton:
                 if memory_refs:
 
                     referrers = gc.get_referrers(tree_old)
-                    msg = pprint.pformat(referrers, indent=33)
 
+                    #msg = pprint.pformat(referrers, indent=33)
                     #log.debug(f"Deprecated FileSystemTree : gc.get_referrers       =\n{msg}")
                     #log.debug('')
 
@@ -7384,8 +7507,8 @@ class ScriptSkeleton:
                         log.debug(f"{margin}Var TYPE     = {type(r)}")
                         log.debug(f"{margin}Var _NAMES_  = {r_names}")
                         log.debug(f"{margin}Var address  = {id(r)}")
-                        log.debug(f"{margin}Var __repr__ = {repr(r)}")
-                        log.debug(f"{margin}Var __str__  = {r}")
+                        #log.debug(f"{margin}Var __repr__ = {repr(r)}")
+                        log.debug(f"{margin}Var __str__  = {str(r)[0:222]}")
 
                 #_pause_()
                 log.debug('')
@@ -7426,14 +7549,55 @@ class ScriptSkeleton:
                 log.critical("\t... = ATTENTION AUX EFFETS DE BORDS")
                 log.critical('')
 
+                # Faudra-t-il annuler les références des _FileSystemLeaf vers leur
+                # FileSystemTree parent, afin de faciliter la Gaarbage Collection ?
+                #
+                #kill_references = ( node_type_old == FileSystemTree._FileSystemLeaf )
+
                 for key, value in my_dict.items():
 
                     if type(value) == node_type_old:
 
                         log.critical("\tConversion de « %s »...", key)
 
+                        # On stocke la zone mémoire éventuellement du type _FileSystemLeaf,
+                        # afin de pouvoir, sî elle est bien de ce type, annuler ensuite la
+                        # référence qu'elle fait pointer vers son FileSystemTree parent...,
+                        # facilitant ainsi le travail du Garbage Collector.
+                        #
+                        # Nous n'annulerons cette référence qu'après l'appel str(value), qui
+                        # exécute _FileSystemLeaf.__str__, qui a besoin de cette référence.
+                        #
+                        #leaf_old = my_dict[key]
+
                         #my_dict[key] = tree_new.node(str(value))
                         my_dict[key] = tree_new.Path(str(value))
+
+                        # Si applicable, on fait pointer la feuille dans le vide, afin de 
+                        # libérer une des références vers l'ancien FileSystemTree, et donc
+                        # de permettre le travail du GARBAGE COLLECTOR.
+                        #
+                        #
+                        # ATTENTION :
+                        # ===========
+                        #
+                        # Il n'est plus besoin d'annuler ces références : dorénavant, dans
+                        # FileSystemTree.__new__, nous annulons la référence de _tree_last
+                        # vers l'ancien FileSystemTree même lorsqu'est sélectionné le mode
+                        # « pathlib_direct_via_module_only ». Dans tous les cas, donc, il
+                        # n'y aura plus de références vers l'ancien FileSystemTree, autres
+                        # que les feuilles dont il est le parent. Or ces feuilles, via la
+                        # conversion ci-dessus ne seront plus utilisées, elles vont alors
+                        # disparaître grâce au Garbage Collector. Une fois disparues, elles
+                        # ne pointeront plus vers l'ancien FileSystemTree, et celui-ci sera
+                        # détruit.
+                        #
+                        #if kill_references:
+                        #    leaf_old.tree = None
+
+                        # Pour vérifier la conversion, on journalise le type de l'objet créé
+                        #
+                        #log.debug("\t\t... en un objet %s.", type(my_dict[key]))
 
                 log.critical("\t~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
                 log.critical('')
