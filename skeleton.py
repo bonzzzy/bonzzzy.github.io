@@ -400,11 +400,11 @@ try:
 
 except NameError:
 
-    def _find_var_refcounts_(obj, pure=True) -> (int, int):
+    def _find_var_refcounts_(*args, **kwargs) -> (int, int):
 
         return -1, -1
 
-    def _find_var_names_(obj, ref=None) -> (str, str, str):
+    def _find_var_names_(*args, **kwargs) -> (str, str, str):
 
         return None, None, None
 
@@ -423,7 +423,8 @@ else:
 
     def _find_var_refcounts_(
         obj: object,
-        pure: bool = True
+        address: int = None,
+        purified: bool = True
         ) -> (int, int):
         """ Pour trouver le nombre de références vers l'espace mémoire
         désigné ( pointé ) par la variable OBJ.
@@ -431,8 +432,13 @@ else:
         :param obj: l'objet dont nous voulons connaître le nombre de
         références pointées vers son espace mémoire.
 
-        :param pure: faut-il corriger ou pas les nombres trouvés des
-        références créées par l'appel à _find_var_refcounts_().
+        :param address: il est possible de ne demander que le nombre
+        de référence pointant vers un espace mémoire, sans fournir de
+        variable pour le paramètre « obj » ( on lui attribue None ).
+        Il suffit de fournir ici l'addresse mémoire à inspecter.
+
+        :param purified: faut-il corriger ou pas les nombres trouvés
+        des références créées par l'appel à _find_var_refcounts_().
 
         :return: le tuplet formé par :
 
@@ -442,8 +448,20 @@ else:
             * le nombre trouvé via sys.getrefcount().
 
         ATTENTION : Aux nombres renvoyés sont soustraites les références
-        provoquées par l'appel à cette fonction si « pure == True ».
+        provoquées par l'appel à cette fonction si « purified == True ».
         """
+
+        if obj is None:
+            memory_adress = address
+            system_counts = -1
+
+        else:
+            # RQ : dans la version CPython de Python, la fonction
+            # id() renvoie l'identifiant unique d'un objet Python,
+            # qui se trouve aussi être son adresse mémoire...
+            #
+            memory_adress = id(obj)
+            system_counts = sys.getrefcount(obj)
     
         # Puisque nous n'écrivons pas :
         #
@@ -453,16 +471,10 @@ else:
         #
         #   system_counts = memory_counts + 1.
         #
-        # RQ : dans la version CPython de Python, la fonction
-        # id() renvoie l'identifiant unique d'un objet Python,
-        # qui se trouve aussi être son adresse mémoire...
-        #
-        memory_adress = id(obj)
         memory_counts = PyObject.from_address(memory_adress).refcnt
-        system_counts = sys.getrefcount(obj)
 
-        # Afin de corriger ces nombres des références générées
-        # par l'appel à cette fonction, nous soustrayons :
+        # Afin de corriger ces nombres des références générées par
+        # l'appel à _find_var_refcounts_(), nous soustrayons :
         #
         #   . -1 au premier car l'appel _find_var_refcounts_(obj)
         #       a ajouté 1 référence vers l'espace mémoire « obj »,
@@ -470,7 +482,7 @@ else:
         #   . -2 au second pour la même raison + le fait que l'appel
         #       sys.getrefcount(obj) a lui aussi ajouté 1 référence.
         #
-        if pure:
+        if purified and obj is not None:
             return memory_counts - 1, system_counts - 2
 
         else:
@@ -555,11 +567,11 @@ else:
                 # ~~~~~~~~~~~~~~
                 # Cf https://docs.python.org/3/reference/datamodel.html#objects-values-and-types
                 #
-                #   The ‘is’ operator compares the identity of two objects
+                #   The 'is' operator compares the identity of two objects
                 #
                 # Cf https://docs.python.org/3/reference/expressions.html#is
                 #
-                #   The operators is and is not test for an object’s identity:
+                #   The operators is and is not test for an object's identity:
                 #   x is y is true if and only if x and y are the same object.
                 #
                 # !!!   Cette MÉTHODE est OK : renvoie le bon nom... !!!
@@ -1760,8 +1772,8 @@ class FileSystemTree:
         # de distinguer la FIN de l'exécution de skeleton.py du
         # cas ci-dessus décrit.
         #
-        elif False:
-        #elif ___debug___:
+        #elif False:
+        elif ___debug___:
 
             # Nous allons afficher le nombre de références
             # mémoire pointant vers nous-mêmes ( exceptée
@@ -1774,9 +1786,9 @@ class FileSystemTree:
             log_debug("\tNous DÉTRUISONS un objet FileSystemTree !!!")
             log_debug(f"\tNbre d'objets en vie = {FileSystemTree._tree_counter}")
             log_debug("\tIl s'agit du dernier objet FileSystemTree :")
-            log_debug('')
+            #log_debug('')
             log_debug(f"\t\t. _find_var_refcounts_() = {memory_refs}")
-            log_debug('')
+            #log_debug('')
 
             if memory_refs:
 
@@ -2167,15 +2179,16 @@ class FileSystemTree:
             """     =============\n"""
             """     ATTENTION !!!\n"""
             """     =============\n"""
-            """         Le module pathlib ne gère, ici, pas de façon assez directe le système de fichier pour que la syntaxe\n"""
-           f"""         ... FileSystemTree.Path.{detail}() soit autorisée.\n"""
+            """         Le module pathlib ne gère, ici, pas de façon assez directe le système de fichier pour que\n"""
+           f"""         ... la syntaxe FileSystemTree.Path.{detail}() soit autorisée.\n"""
             """         Il faut se placer dans l'un des modes suivants :\n"""
-            """             - soit « pathlib_direct_via_path_class »,\n"""
-            """             - soit « pathlib_direct_via_module_only ».\n"""
+            """             - « pathlib_direct_via_path_class » / « pathlib_direct_via_module_only »,\n"""
+            """             - l'un des autres modes mais avec UNE SEULE instance de FileSystemTree.\n"""
            f"""         Dans le mode actuel, seule la syntaxe FileSystemTree.Path().{detail}() est comprise.\n"""
            f"""         [ et ce car _FileSystemLeaf.{detail}() ne peut être une méthode de classe... ].\n\n"""
            f"""         INCORRECT = FileSystemTree.Path.{detail}() ---> OK = FileSystemTree.Path().{detail}()\n\n"""
            f"""         Classe    : {cls}\n"""
+           f"""         Nb Objets : {cls._tree_counter}\n"""
            f"""         Variables : {locals}"""
         )
 
@@ -6136,6 +6149,7 @@ class ScriptSkeleton:
             # il le devrait...
             #
             self.shw_debug('Nous avons déjà dit au revoir...')
+            self.shw_debug('')
 
         else:
 
@@ -6168,6 +6182,13 @@ class ScriptSkeleton:
                     self._logFile,
                     wait = False
                     )
+
+            # On signale à notre objet FileSystemTree de
+            # ne plus écrire dans le LOG, car nous allons
+            # détruire ce fichier...
+            #
+            if isinstance(self.files, FileSystemTree):
+                self.files._register_log(None)
 
             # On libère le fichier LOG de sa fonction de
             # handler.
@@ -9361,35 +9382,136 @@ if __name__ == "__main__":
         log.info('')
         log.info('')
 
+        configs = [
+            ['un seul objet FileSystemTree', False],
+            ['deux instances FileSystemTree', True],
+        ]
+
         tests = {
             'cwd' : ( ['()', leaf().cwd ],  ['', leaf.cwd ] ),
-            'home': ( ['()', leaf().home],  ['', leaf.home] ),
+            #'home': ( ['()', leaf().home],  ['', leaf.home] ),
         }
 
-        for key, syntaxes in tests.items():
+        for c in configs:
 
-            for liste in syntaxes:
+            msg = f'TESTS lorsque nous avons {c[0]} en mémoire :'
 
-                msg = f'FileSystemLeaf.Path{liste[0]}.{key}() :'
-                fct = liste[1]
+            skull.shw(msg)
+            skull.shw('°' * len(msg))
+            skull.shw('')
+            skull.shw('')
 
-                skull.shw(msg)
-                skull.shw('~' * len(msg))
-                skull.shw('')
-                skull.shw(f'=> {key} ( @MEMOIRE ) = {fct}')
-                skull.shw(f'=> {key} (   TYPE   ) = {type(fct)}')
+            if c[1]:
+                fake_tree = FileSystemTree(log_file = log)
+                log.debug('')
 
-                try:
-                    skull.shw(f'=> {key} (  VALEUR  ) = {fct()}')
+            for key, syntaxes in tests.items():
 
-                except AttributeError as e:
-                    skull.shw(f'=> {key} (  VALEUR  ) = ERREUR {type(e)}')
-                    skull.shw(f'{e}')
+                for liste in syntaxes:
 
-                skull.shw('')
-                skull.shw('')
+                    msg = f'FileSystemLeaf.Path{liste[0]}.{key}() :'
+                    fct = liste[1]
 
-            _pause_("PAUSE avant la syntaxe suivante", after=2)
+                    skull.shw('\t' + msg)
+                    skull.shw('\t' + '~' * len(msg))
+                    skull.shw('')
+                    skull.shw(f'=> {key} ( @MEMOIRE ) = {fct}')
+                    skull.shw(f'=> {key} (   TYPE   ) = {type(fct)}')
+
+                    try:
+                        skull.shw(f'=> {key} (  VALEUR  ) = {fct()}')
+
+                    except AttributeError as e:
+                        skull.shw(f'=> {key} (  VALEUR  ) = ERREUR {type(e)}')
+                        skull.shw(f'{e}')
+
+                    skull.shw('')
+                    skull.shw('')
+
+                    _pause_("PAUSE avant la syntaxe suivante", after=2)
+
+
+        # Nous allons maintenant détruire l'instance fake_tree
+        # pour observer comment réagit notre script...
+        #
+        # Nous allons ainsi dérouler les étapes suivantes :
+        #
+        #   . Récupérer l'adresse mémoire de fake_tree.
+        #
+        #   . Vérifier le nombre de références vers l'objet
+        #     fake_tree.
+        #   > On doit trouver = 2
+        #   ( fake_tree & FileSystemTree._tree_last )
+        #
+        #   . Annuler la référence de fake_tree vers cette
+        #     adresse ( espace ) mémoire :
+        #       - soit « del fake_tree »,
+        #       - soit « fake_tree = None »
+        #
+        #   . Vérifier le nombre de référence vers l'adresse
+        #     mémoire.
+        #   > On doit trouver = 1 ( _tree_last seulement )
+        #
+        #   . Attribuer à FileSystemTree._tree_last une autre
+        #     valeur que l'objet fake_tree ( skull.files par
+        #     par exemple ).
+        #
+        #   . Vérifier le nombre de référence vers l'adresse
+        #     mémoire.
+        #   > On doit trouver = 0
+        #   > L'objet fake_tree doit avoir disparu !
+        #
+        skull.shw('DESTRUCTION du 2nd FileSystemTree utilisé :')
+        skull.shw('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
+        skull.shw('')
+        skull.shw('STEP 0')
+        skull.shw('État INITIAL des références vers le 2nd FileSystemTree :')
+        skull.shw(f'_find_var_refcounts_(fake_tree) = {_find_var_refcounts_(fake_tree)}')
+        skull.shw('')
+
+        fake_address = id(fake_tree)
+
+        tests = {
+            #
+            # Step 1 : « del fake_tree » ou « fake_tree = None ».
+            # ========
+            #
+            'step 1' : 'fake_tree = None',
+            #
+            # Step 2 : Si l'on écrit :
+            # ========
+            #
+            #   skull.files._tree_last = skull.files
+            #
+            # ... alors _tree_last ne sera pas réellement modifié !!!
+            # ... et la référence ne disparaîtra donc pas.
+            #
+            # En effet, _tree_last est un attribut de classe et non
+            # d'instance.
+            #
+            'step 2' : 'skull.files._tree_last = skull.files',
+            #
+            # Step 3 : On annule la dernière référence à fake_tree.
+            # ========
+            #
+            # ... en modifiant _tree_last au niveau classe.
+            #
+            'step 3' : 'FileSystemTree._tree_last = skull.files',
+        }
+
+        for key, action in tests.items():
+
+            skull.shw(f'{key.upper()}')
+            skull.shw(f'Action exécutée : « {action} »')
+            skull.shw('')
+
+            exec(action)
+
+            skull.shw('Évolution des références vers le 2nd FileSystemTree :')
+            skull.shw(f'_find_var_refcounts_(fake_address) = {_find_var_refcounts_(None, fake_address)}')
+            skull.shw('')
+
+        _pause_("PAUSE avant les prochains AUTOTESTS", before=1, after=2)
 
 
     # #######################################################################
