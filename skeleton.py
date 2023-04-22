@@ -1783,20 +1783,20 @@ class FileSystemTree:
 
             log_debug("Type de GESTION des FICHIERS :")
             log_debug("==============================")
-            log_debug("\tNous DÉTRUISONS un objet FileSystemTree !!!")
-            log_debug(f"\tNbre d'objets en vie = {FileSystemTree._tree_counter}")
-            log_debug("\tIl s'agit du dernier objet FileSystemTree :")
-            #log_debug('')
-            log_debug(f"\t\t. _find_var_refcounts_() = {memory_refs}")
-            #log_debug('')
+            log_debug("Nous DÉTRUISONS un objet FileSystemTree !!!")
+            #log_debug(f"Nbre d'objets en vie = {FileSystemTree._tree_counter}")
+            log_debug("Il s'agit du dernier objet FileSystemTree :")
+            log_debug(f"\t. _find_var_refcounts_() = {memory_refs}")
 
-            if memory_refs:
+            referrers = gc.get_referrers(self)
 
-                referrers = gc.get_referrers(self)
+            if referrers:
+
                 msg = pprint.pformat(referrers, indent=33)
 
-                log_debug(f"\t\t. gc.get_referrers       =\n{msg}")
-                log_debug('')
+                log_debug(f"\t. gc.get_referrers       =\n{msg}")
+
+            log_debug('')
 
 
     def __init__(
