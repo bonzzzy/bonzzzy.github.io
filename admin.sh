@@ -16,7 +16,7 @@ rename_to_file() {
 rename_to_cmd() {
 
 	rename_to_file "$1" "$2"
-	chmod u+rwx "$2"
+	if [ -e "$2" ]; then chmod u+rwx "$2"; fi
 
 }
 
