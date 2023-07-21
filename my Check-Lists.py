@@ -2,7 +2,6 @@
 # -*- coding: utf8 -*-
 
 
-import os
 import sys
 # import skeleton
 
@@ -62,6 +61,12 @@ if __name__ == "__main__":
     print('INFORMATIONS :')
     print('==============')
     print()
+
+    # Issues: In iOS, you cannot write in the ~ directory, only in ~/Documents/, ~/Library/ and ~/tmp.
+    #
+    # Cf 20230404 - 7 best free Python IDEs for iPad and iPhone --- ( mes ) NOTES, dont des infos IMPORTANTES sur des RESTRICTIONS sous iOS ---*
+    # in _Know\Info\Outils\Dvpt\Éditeurs de CODE ( Python, etc ) - on iOS.rar\
+    #
     print("\tkivy_home_dir =\t", kivy_home_dir)
     print()
     print()

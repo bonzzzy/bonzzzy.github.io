@@ -15,4 +15,14 @@
 #
 echo
 
-python import_via_github.py " " "import_via_github.sh" "skeleton.py" "skeleton.sh" "my Check-Lists.py" "admin.sh"
+# On lève dorénavant l'ambiguité qui existait avec la commande :
+#
+#		python import_via_github.py
+#
+# En effet, suivant les configurations machine et/ou les alias utilisateurs :
+#
+#		python pouvait représenter python2 ou python 3 !!!
+#
+# On désigne donc nommément python 3.
+#
+python3 import_via_github.py " " "import_via_github.sh" "skeleton.py" "skeleton.sh" "my Check-Lists.py" "admin.sh"

@@ -11,4 +11,14 @@
 #
 echo
 
-python "my Check-Lists.py"
+# On lève dorénavant l'ambiguité qui existait avec la commande :
+#
+#		python "my Check-Lists.py"
+#
+# En effet, suivant les configurations machine et/ou les alias utilisateurs :
+#
+#		python pouvait représenter python2 ou python 3 !!!
+#
+# On désigne donc nommément python 3.
+#
+python3 "my Check-Lists.py"

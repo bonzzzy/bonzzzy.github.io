@@ -10,4 +10,14 @@
 # 		chmod u+rwx @s
 #
 
-python "skeleton.py"
+# On lève dorénavant l'ambiguité qui existait avec la commande :
+#
+#		python "skeleton.py"
+#
+# En effet, suivant les configurations machine et/ou les alias utilisateurs :
+#
+#		python pouvait représenter python2 ou python 3 !!!
+#
+# On désigne donc nommément python 3.
+#
+python3 "skeleton.py"

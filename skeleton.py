@@ -129,6 +129,8 @@ walking_via_scandir = 'os.scandir'
 #
 #   - Fonctions d'initialisation des EXÉCUTABLES et RÉPERTOIRES utilisés
 #
+#   - Fonctions pour manipulation de MODULES ( installation, ... )
+#
 #   - Fonctions pour journalisation des WARNINGS et ERREURS ( DÉBOGAGE )
 #
 #   - Fonctions spécifiques à l'OPERATING SYSTEM ( bip, shutdown, ... )
@@ -148,6 +150,12 @@ walking_via_scandir = 'os.scandir'
 #                       . def get_paths_and_miscellaneous
 #                       . def show_paths_and_miscellaneous
 #                       . def check_paths_and_miscellaneous
+#
+# ===========================================================================
+#
+#   - Fonctions pour manipulation de MODULES ( installation, ... ) :
+#
+#                       . def install_module_via_pip
 #
 # ===========================================================================
 #
@@ -4804,6 +4812,52 @@ class FileSystemTree:
                         fd.write('')
 
 
+        def copy(
+            self,
+            target: object     # _FileSystemLeaf [ ou ] os.PathLike
+            ):
+            """ Pour COPIER un fichier.
+
+            ATTENTION : Au moins jusqu'à Python version 3.11, pathlib.Path.copy()
+            n'existe pas !!! Puisque, ici, nous ne souhaitons pas proposer une
+            interface plus grande que PATHLIB, nous ne pouvons donc actuellement
+            offrir cette fonction...
+
+            Cf https://docs.python.org/3/library/pathlib.html
+
+            Cf https://realpython.com/python-pathlib/
+            ie 20221019 - Python 3's PATHLIB Module = Taming the File System *
+            in _Know\Info\Dvpt\Réalisation\Langages\Python\- et - FICHIERS.rar
+            
+               « Surprisingly, Path DOESN'T have a METHOD to COPY files »
+
+               Il est ensuite fourni dans ce fichier des façons de contourner
+               ce manque... Par exemple via la librairie SHUTIL.
+
+            Cf https://www.techiedelight.com/copy-file-python/
+            ie 20230719 - How to COPY a FILE in Python --------- ( !!! *
+            in _Know\Info\Dvpt\Réalisation\Langages\Python\- et - FICHIERS.rar
+
+                Ici aussi, il est proposé des moyens de contourner ce manque.
+
+            En utilisant skeleton.py seul, lorsque l'on a besoin de copier un
+            fichier, on peut ainsi écrire :
+
+                with open(<<< FICHIER SOURCE DE LA COPIE >>>, 'rb') as file_in:
+                    bytes_in = file_in.read()
+
+                _my_skeleton.save_strings_to_file(
+                    bytes_in,
+                    destination = <<< FICHIER DESTINATION DE LA COPIE >>>,
+                    ok_to_erase = False,
+                    data_fmt = skeleton.coding_bytes,
+                    )
+
+            """
+
+            raise NotImplementedError
+
+
         def rename(
             self,
             #target: os.PathLike
@@ -5835,6 +5889,103 @@ class ScriptSkeleton:
                 self.shw_debug('')
             
         return value
+
+
+# ---------------------------------------------------------------------------
+#
+#   PARTIE :
+#   ~~~~~~~~
+#   Fonctions pour manipulation de MODULES ( installation, ... )
+#
+# ---------------------------------------------------------------------------
+
+
+    def install_module_via_pip(
+        self,
+        module_name: str = None
+        ) -> bool:
+        """ Pour installer un module qui ne l'aurait pas encore été et dont
+            nous aurions pour autant besoin...
+
+        :param module_name: le nom du module à installer
+
+        :return: True si l'installation a réussi ( ou si le module existait
+        déjà ), False sinon.
+        """
+
+        log = self.logItem
+
+        installed = False
+
+        try:
+            # On essaye d'importer le module pour savoir s'il n'existerait
+            # pas déjà.
+            #
+            # Pour ceci, la syntaxe :
+            #
+            #   import module_name
+            #
+            # ... ne convient pas car, alors, Python va recherche un module
+            # nommé « module_name » !!!
+            #
+            # Dans ce cas, on peut utiliser le module « importlib » :
+            #
+            #   cf https://docs.python.org/3/library/importlib.html#importlib.import_module
+            #
+            # C'est la syntaxe la plus correcte et l'on écrit donc :
+            #
+            #   import importlib
+            #   importlib.import_module(module_name)
+            #
+            # On peut sinon utiliser la fonction « __import__() », interne
+            # à Python  :
+            #
+            #   cf https://docs.python.org/3/library/functions.html#import__
+            #
+            # ... mais cela est déconseillé :
+            #
+            #   « Direct use of __import__() is also discouraged in favor of
+            #     importlib.import_module(). »
+            #
+            # TOUTEFOIS, dans notre cas, comme il ne s'agit que de tester
+            # l'existence du module, c'est pourtant cette dernière syntaxe
+            # ( la plus simple et efficace ) que nous avons choisie !!!
+            #
+            __import__(module_name)
+
+        except ModuleNotFoundError:
+
+            # Le module n'est pas installé...
+            #
+            # ... alors on l'installe en attendant la fin de cette opération
+            # ( via subprocess.run ).
+            #
+            command_line = [sys.executable, '-m', 'pip', 'install', module_name]
+            log.debug("Commande exécutée = %s", command_line)
+            log.debug('')
+
+            process = subprocess.run(command_line)
+            log.debug('Code Retour de la commande : « %s ».', process.returncode)
+            log.debug('')
+
+            if process.returncode == 0:
+
+                log.debug("Installation du module « %s » réussie.", module_name)
+                log.debug('')
+
+                installed = True
+
+            else:
+                log.critical('Module « %s » INTROUVABLE !!!', module_name)
+                log.critical('')
+
+        else:
+            log.debug("Module « %s » déjà présent sur cette machine.", module_name)
+            log.debug('')
+
+            installed = True
+
+        return installed
 
 
 # ---------------------------------------------------------------------------
